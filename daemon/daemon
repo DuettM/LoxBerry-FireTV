@@ -1,0 +1,26 @@
+#!/bin/bash
+set -u
+if [ -z "${LBHOMEDIR:-}" ] && [ -r /etc/environment ]; then . /etc/environment; fi
+ROOT="${LBHOMEDIR:-${LBHOME:-/opt/loxberry}}"
+DB="$ROOT/data/system/plugindatabase.json"
+FOLDER=""
+if [ -r "$DB" ]; then
+  FOLDER="$(python3 - "$DB" <<'PY'
+import json,sys
+try:
+ d=json.load(open(sys.argv[1],encoding='utf-8'))
+ for p in d.get('plugins',[]):
+  if p.get('name')=='firetv' and p.get('author_email')=='duett86@web.de':
+   print(p.get('folder','')); break
+except Exception: pass
+PY
+)"
+fi
+[ -n "$FOLDER" ] || FOLDER="firetv"
+BIN="$ROOT/bin/plugins/$FOLDER"
+CFG="$ROOT/config/plugins/$FOLDER/config.json"
+LOG="$ROOT/log/plugins/$FOLDER/mqtt-daemon.log"
+[ -x "$BIN/mqtt_listener.py" ] && [ -r "$CFG" ] || exit 0
+mkdir -p "$(dirname "$LOG")" 2>/dev/null || true
+"$BIN/mqtt_listener.py" --config "$CFG" --core "$BIN/firetv.py" >>"$LOG" 2>&1 &
+exit 0
