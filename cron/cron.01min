@@ -1,0 +1,21 @@
+#!/bin/bash
+set -u
+ROOT="${LBHOMEDIR:-${LBHOME:-/opt/loxberry}}"
+FOLDER="firetv"
+CFG="$ROOT/config/plugins/$FOLDER/config.json"
+BIN="$ROOT/bin/plugins/$FOLDER"
+[ -r "$CFG" ] || exit 0
+python3 - "$CFG" "$BIN/firetv.py" "$BIN/watchdog.py" <<'PY' >/dev/null 2>&1
+import json,sys,subprocess,time,os
+cfg,core,wd=sys.argv[1:]
+try:c=json.load(open(cfg,encoding='utf-8'))
+except Exception:raise SystemExit
+if c.get('watchdog',{}).get('enabled',True):subprocess.Popen([wd,cfg],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+interval=max(10,int(c.get('poll_interval',30)));stamp=cfg+'.lastpoll';due=True
+try:due=(time.time()-os.path.getmtime(stamp))>=interval
+except OSError:pass
+if due:
+ subprocess.run([core,'--config',cfg,'--poll-all'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=50)
+ try:open(stamp,'a').close();os.utime(stamp,None)
+ except Exception:pass
+PY
