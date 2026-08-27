@@ -1,0 +1,16 @@
+{
+  "config_version": 1,
+  "poll_interval": 30,
+  "adb_timeout": 8,
+  "mqtt": {
+    "enabled": true,
+    "listen_enabled": true,
+    "base_topic": "firetv",
+    "retain_state": true
+  },
+  "watchdog": {
+    "enabled": true,
+    "max_age_seconds": 180
+  },
+  "devices": []
+}
