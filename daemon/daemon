@@ -22,5 +22,14 @@ CFG="$ROOT/config/plugins/$FOLDER/config.json"
 LOG="$ROOT/log/plugins/$FOLDER/mqtt-daemon.log"
 [ -x "$BIN/mqtt_listener.py" ] && [ -r "$CFG" ] || exit 0
 mkdir -p "$(dirname "$LOG")" 2>/dev/null || true
-"$BIN/mqtt_listener.py" --config "$CFG" --core "$BIN/firetv.py" >>"$LOG" 2>&1 &
+touch "$LOG" 2>/dev/null || true
+chown loxberry:loxberry "$LOG" 2>/dev/null || true
+chmod 600 "$LOG" 2>/dev/null || true
+if command -v runuser >/dev/null 2>&1; then
+  runuser -u loxberry -- "$BIN/mqtt_listener.py" --config "$CFG" --core "$BIN/firetv.py" >>"$LOG" 2>&1 &
+elif command -v setpriv >/dev/null 2>&1; then
+  setpriv --reuid=loxberry --regid=loxberry --init-groups "$BIN/mqtt_listener.py" --config "$CFG" --core "$BIN/firetv.py" >>"$LOG" 2>&1 &
+else
+  su -s /bin/sh loxberry -c "exec '$BIN/mqtt_listener.py' --config '$CFG' --core '$BIN/firetv.py'" >>"$LOG" 2>&1 &
+fi
 exit 0
