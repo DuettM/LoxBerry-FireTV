@@ -45,5 +45,3 @@ Payload-Beispiele:
 ## Installation
 
 Die Installationsdatei ist `LoxBerry-FireTV-0.1.0.zip`. Autoupdate ist in v0.1.0 vorerst deaktiviert, bis das Binärarchiv als GitHub-Release veröffentlicht ist.
-
-Autor: Düthorn Marco
