@@ -3,32 +3,22 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - '.publish-trigger-firetv-020'
+      - '.publish-trigger-firetv-020-v2'
 permissions:
   contents: write
+  actions: read
 jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Rebuild deterministic ZIP
+      - name: Download exact signed package artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          python3 - <<'PY'
-          import os,stat,zipfile
-          out='LoxBerry-FireTV-0.2.0.zip'
-          roots=['bin','config','cron','daemon','uninstall','webfrontend']
-          singles=['plugin.cfg','postinstall.sh','postupgrade.sh','preupgrade.sh','release.cfg','prerelease.cfg','README.md','CHANGELOG.md','LICENSE','LEGAL.md','SECURITY.md']
-          files=[]
-          for root in roots:
-              for dp,_,names in os.walk(root):
-                  for n in names: files.append(os.path.join(dp,n))
-          files += [p for p in singles if os.path.isfile(p)]
-          with zipfile.ZipFile(out,'w',zipfile.ZIP_DEFLATED,compresslevel=9) as z:
-              for p in sorted(set(files)):
-                  data=open(p,'rb').read(); zi=zipfile.ZipInfo(p.replace(os.sep,'/'),(2026,1,1,0,0,0)); zi.compress_type=zipfile.ZIP_DEFLATED
-                  mode=0o755 if os.stat(p).st_mode & stat.S_IXUSR else 0o644; zi.external_attr=(mode & 0xffff)<<16; zi.create_system=3
-                  z.writestr(zi,data,compress_type=zipfile.ZIP_DEFLATED,compresslevel=9)
-          PY
+          mkdir -p package
+          gh run download 33152668400 -n firetv-0.2.0-package -D package
+          mv package/LoxBerry-FireTV-0.2.0.zip ./LoxBerry-FireTV-0.2.0.zip
       - name: Verify checksum and Ed25519 signature
         run: |
           cp release-signatures/v0.2.0.sha256 LoxBerry-FireTV-0.2.0.zip.sha256
