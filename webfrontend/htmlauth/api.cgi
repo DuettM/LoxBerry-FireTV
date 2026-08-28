@@ -3,8 +3,8 @@ import cgi,hashlib,hmac,json,os,re,subprocess,sys
 
 def root(): return os.environ.get('LBHOMEDIR') or os.environ.get('LBHOME') or '/opt/loxberry'
 def folder():
- p=os.environ.get('SCRIPT_FILENAME') or __file__
- return os.path.basename(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(p))))) if '/plugins/' in os.path.abspath(p) else 'firetv'
+ p=os.path.abspath(os.environ.get('SCRIPT_FILENAME') or __file__);parts=p.split(os.sep)
+ return parts[parts.index('plugins')+1] if 'plugins' in parts and parts.index('plugins')+1 < len(parts) else 'firetv'
 FOLDER=folder();CFG=os.path.join(root(),'config','plugins',FOLDER,'config.json');BIN=os.path.join(root(),'bin','plugins',FOLDER)
 
 def out(o,code=200):
@@ -13,7 +13,7 @@ def out(o,code=200):
 def csrf(c):
  seed=(os.environ.get('HTTP_COOKIE','')+'|'+os.environ.get('HTTP_USER_AGENT','')).encode();key=str(c.get('web_secret','')).encode();return hmac.new(key,seed,hashlib.sha256).hexdigest()
 def require_csrf(c):
- sent=os.environ.get('HTTP_X_FIRETV_CSRF','');
+ sent=os.environ.get('HTTP_X_FIRETV_CSRF','')
  if not sent or not hmac.compare_digest(sent,csrf(c)):out({'ok':False,'error':'CSRF-Prüfung fehlgeschlagen.'},403)
 def same_site():
  if os.environ.get('HTTP_SEC_FETCH_SITE','').lower()=='cross-site':out({'ok':False,'error':'Cross-Site-Anfrage blockiert.'},403)
