@@ -24,4 +24,4 @@ print('<h2>Log (bereinigt)</h2><pre>')
 try:
  lines=open(LOG,encoding='utf-8',errors='replace').read().splitlines()[-100:];print(html.escape('\n'.join(redact(x,c) for x in lines)))
 except Exception as e:print(html.escape(str(e)))
-print('</pre><footer>Düthorn Marco · 2026 · v0.2.0</footer></body></html>')
+print('</pre><footer>Project contributors · 2026 · v0.2.0</footer></body></html>')

@@ -10,7 +10,7 @@ import json,sys
 try:
  d=json.load(open(sys.argv[1],encoding='utf-8'))
  for p in d.get('plugins',[]):
-  if p.get('name')=='firetv' and p.get('author_email')=='duett86@web.de':
+  if p.get('name')=='firetv' and p.get('author_email')=='GitHub private vulnerability reporting':
    print(p.get('folder','')); break
 except Exception: pass
 PY
