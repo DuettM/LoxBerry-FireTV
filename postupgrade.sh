@@ -18,11 +18,10 @@ os.chmod(tmp,0o600);os.replace(tmp,p)
 PY
 mkdir -p "$PLOG"
 chmod 700 "$PCONFIG" "$PLOG" 2>/dev/null || true
-chmod 700 "$PBIN/firetv.py" "$PBIN/mqtt_listener.py" "$PBIN/watchdog.py" 2>/dev/null || true
-chmod 600 "$PCONFIG/config.json" 2>/dev/null || true
+chmod 700 "$PBIN/firetv.py" "$PBIN/mqtt_listener.py" "$PBIN/watchdog.py" "$PBIN/secure_update.py" 2>/dev/null || true
+chmod 600 "$PBIN/update_public_key.hex" "$PCONFIG/config.json" 2>/dev/null || true
 touch "$PLOG/firetv.log" "$PLOG/mqtt-daemon.log" "$PLOG/watchdog.log"
 chmod 600 "$PLOG/"*.log 2>/dev/null || true
 chown -R loxberry:loxberry "$PCONFIG" "$PLOG" 2>/dev/null || true
-# Stop only this concrete installation. LoxBerry's daemon mechanism starts it again.
 pkill -f "$PBIN/mqtt_listener.py.*$PCONFIG/config.json" 2>/dev/null || true
 exit 0
