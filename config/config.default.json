@@ -1,5 +1,6 @@
 {
-  "config_version": 1,
+  "config_version": 2,
+  "web_secret": "",
   "poll_interval": 30,
   "adb_timeout": 8,
   "mqtt": {
