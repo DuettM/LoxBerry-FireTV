@@ -37,7 +37,7 @@ if os.environ.get('REQUEST_METHOD','GET').upper()=='POST':
   if not same_site() or not valid_csrf(c,f.getfirst('csrf','')):raise ValueError('Sicherheitsprüfung fehlgeschlagen.')
   act=f.getfirst('form_action','')
   if act=='save_general':
-   poll=int(f.getfirst('poll_interval','30')); 
+   poll=int(f.getfirst('poll_interval','30'))
    if poll<10 or poll>3600:raise ValueError('Abfrageintervall muss zwischen 10 und 3600 Sekunden liegen.')
    c['poll_interval']=poll;c.setdefault('mqtt',{})['enabled']=bool(f.getfirst('mqtt_enabled'));c['mqtt']['listen_enabled']=bool(f.getfirst('mqtt_listen'));c['mqtt']['base_topic']=clean_topic(f.getfirst('base_topic','firetv'));c.setdefault('watchdog',{})['enabled']=bool(f.getfirst('watchdog_enabled'));save(c);notice='Einstellungen gespeichert.'
   elif act=='add_device':
@@ -63,4 +63,4 @@ print('<section><h2>Allgemein</h2><form method="post">%s<input type="hidden" nam
 print('<section><h2>Fire TV hinzufügen</h2><form method="post">%s<input type="hidden" name="form_action" value="add_device"><input name="name" maxlength="80" placeholder="Wohnzimmer" required><input name="ip" maxlength="253" placeholder="192.168.1.50" required><input name="port" type="number" min="1" max="65535" value="5555"><button>Hinzufügen</button></form></section><section><h2>Geräte</h2>'%csrf_h)
 for d in c.get('devices',[]):
  print('<p><b>%s</b> · %s:%s · MQTT-ID <code>%s</code> <form method="post" style="display:inline">%s<input type="hidden" name="form_action" value="delete"><input type="hidden" name="id" value="%s"><button>Löschen</button></form></p>'%(html.escape(str(d.get('name',''))),html.escape(str(d.get('ip',''))),d.get('port',5555),html.escape(str(d.get('id',''))),csrf_h,html.escape(str(d.get('id','')),quote=True)))
-print('</section><footer>Düthorn Marco · 2026 · v0.2.0</footer></body></html>')
+print('</section><footer>Fire TV Control · v0.2.0</footer></body></html>')
