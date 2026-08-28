@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python syntax
+        run: |
+          python3 -m py_compile bin/firetv.py bin/mqtt_listener.py bin/watchdog.py webfrontend/htmlauth/index.cgi webfrontend/htmlauth/config.cgi webfrontend/htmlauth/api.cgi webfrontend/htmlauth/debug.cgi
+      - name: Shell syntax
+        run: |
+          bash -n postinstall.sh preupgrade.sh postupgrade.sh daemon/daemon cron/cron.01min uninstall/uninstall.sh
+      - name: JSON config
+        run: python3 -m json.tool config/config.default.json >/dev/null
+      - name: Security baseline
+        run: |
+          grep -q 'VERSION=0.2.0' plugin.cfg
+          grep -q 'AUTOMATIC_UPDATES=false' plugin.cfg
+          grep -q 'web_secret' config/config.default.json
+          grep -q 'hmac.compare_digest' webfrontend/htmlauth/config.cgi
+          grep -q 'runuser -u loxberry' daemon/daemon
