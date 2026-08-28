@@ -1,0 +1,53 @@
+name: Publish FireTV Signed Release
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.publish-trigger-firetv-020'
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rebuild deterministic ZIP
+        run: |
+          python3 - <<'PY'
+          import os,stat,zipfile
+          out='LoxBerry-FireTV-0.2.0.zip'
+          roots=['bin','config','cron','daemon','uninstall','webfrontend']
+          singles=['plugin.cfg','postinstall.sh','postupgrade.sh','preupgrade.sh','release.cfg','prerelease.cfg','README.md','CHANGELOG.md','LICENSE','LEGAL.md','SECURITY.md']
+          files=[]
+          for root in roots:
+              for dp,_,names in os.walk(root):
+                  for n in names: files.append(os.path.join(dp,n))
+          files += [p for p in singles if os.path.isfile(p)]
+          with zipfile.ZipFile(out,'w',zipfile.ZIP_DEFLATED,compresslevel=9) as z:
+              for p in sorted(set(files)):
+                  data=open(p,'rb').read(); zi=zipfile.ZipInfo(p.replace(os.sep,'/'),(2026,1,1,0,0,0)); zi.compress_type=zipfile.ZIP_DEFLATED
+                  mode=0o755 if os.stat(p).st_mode & stat.S_IXUSR else 0o644; zi.external_attr=(mode & 0xffff)<<16; zi.create_system=3
+                  z.writestr(zi,data,compress_type=zipfile.ZIP_DEFLATED,compresslevel=9)
+          PY
+      - name: Verify checksum and Ed25519 signature
+        run: |
+          cp release-signatures/v0.2.0.sha256 LoxBerry-FireTV-0.2.0.zip.sha256
+          cp release-signatures/v0.2.0.sig LoxBerry-FireTV-0.2.0.zip.sig
+          echo "$(cut -d' ' -f1 LoxBerry-FireTV-0.2.0.zip.sha256)  LoxBerry-FireTV-0.2.0.zip" | sha256sum -c -
+          python3 - <<'PY'
+          import base64,importlib.util
+          spec=importlib.util.spec_from_file_location('secure_update','bin/secure_update.py');m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+          blob=open('LoxBerry-FireTV-0.2.0.zip','rb').read();sig=base64.b64decode(open('LoxBerry-FireTV-0.2.0.zip.sig').read().strip(),validate=True)
+          if not m.verify(sig,blob,bytes.fromhex(m.PUB)): raise SystemExit('Ed25519 verification failed')
+          print('Ed25519 signature valid')
+          PY
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create v0.2.0 \
+            LoxBerry-FireTV-0.2.0.zip \
+            LoxBerry-FireTV-0.2.0.zip.sha256 \
+            LoxBerry-FireTV-0.2.0.zip.sig \
+            --title 'Fire TV Control v0.2.0' \
+            --notes 'Security/Compliance release: dynamic LoxBerry paths, CSRF + POST for control actions, privilege drop to loxberry, hardened config/log permissions, central LoxBerry MQTT and SHA-256 + Ed25519 signed update chain.'
