@@ -7,7 +7,10 @@ APP_PRESETS={"prime":"com.amazon.firebat","primevideo":"com.amazon.firebat","net
 def load_json(path):
     with open(path,encoding="utf-8") as f:return json.load(f)
 
-def plugin_root(): return os.environ.get("LBHOMEDIR") or os.environ.get("LBHOME") or "/opt/loxberry"
+def plugin_root():
+    root=os.environ.get("LBHOMEDIR") or os.environ.get("LBHOME")
+    if not root: raise RuntimeError("LBHOMEDIR/LBHOME ist nicht gesetzt")
+    return root
 def general_json(): return os.path.join(plugin_root(),"config","system","general.json")
 def base_topic(cfg): return str(cfg.get("mqtt",{}).get("base_topic","firetv") or "firetv").strip().strip("/")
 def slug(s):
