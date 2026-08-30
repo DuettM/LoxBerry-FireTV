@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.9
+- TV-Einschaltlogik über Fire-TV-Wakeup plus Home für HDMI-CEC/One-Touch-Play ergänzt
+- TV-Ausschaltlogik über Fire-TV-Standby/CEC ergänzt
+- MQTT `on/1/true` steuert jetzt den TV-Einschaltpfad, `off/0/false` den TV-Ausschaltpfad
+- Lautstärke versucht zuerst Android Media-Session/System-Volume und fällt danach auf Keyevents zurück
+- CEC-Einstellung wird soweit verfügbar im Gerätestatus mit ausgegeben
+- Bestehender `awake` MQTT-Status bleibt für Loxone-Automationen verfügbar
+
 ## 0.2.8
 - Automatische Fire-TV-Suche im lokalen IPv4-Netz hinzugefügt
 - Scan prüft ADB auf TCP-Port 5555 und begrenzt sich auf maximal 254 Hosts
