@@ -87,6 +87,23 @@ class FireTV:
         return out
     def key(self,key):
         k=str(key).lower();code=KEYS.get(k,k);self.shell("input","keyevent",str(code));return {"ok":True,"action":k}
+    def volume(self,direction):
+        d=str(direction).lower();adj={"volumeup":"raise","volumedown":"lower","mute":"toggle"}.get(d)
+        if not adj:raise ValueError("Ungültige Lautstärkeaktion")
+        attempts=[]
+        for cmd in (("cmd","media_session","volume","--stream","3","--adj",adj),("media","volume","--stream","3","--adj",adj)):
+            try:
+                out=self.shell(*cmd); attempts.append(out)
+                if "unknown" not in out.lower() and "error" not in out.lower():return {"ok":True,"action":d,"method":"media_session","output":out[-300:]}
+            except Exception as e:attempts.append(str(e))
+        self.key(d)
+        return {"ok":True,"action":d,"method":"keyevent-fallback","note":"Bei HDMI-CEC/IR kann Fire TV ADB die Hardware-Lautstärketaste nicht auf jedem TV vollständig emulieren."}
+    def tv_on(self):
+        self.key("wakeup");time.sleep(0.35);self.key("home")
+        return {"ok":True,"action":"tvon","method":"firetv-one-touch-play","note":"Fire TV Gerätesteuerung/HDMI-CEC muss aktiviert sein."}
+    def tv_off(self):
+        self.key("sleep")
+        return {"ok":True,"action":"tvoff","method":"firetv-standby-cec","note":"CEC-Standby hängt von Fire TV und TV-Gerätesteuerung ab."}
     def launch(self,package):
         package=APP_PRESETS.get(str(package).lower(),package);out=self.shell("monkey","-p",str(package),"-c","android.intent.category.LAUNCHER","1");return {"ok":True,"package":package,"output":out[-500:]}
     def status(self):
@@ -98,6 +115,8 @@ class FireTV:
             if not m:
                 act=self.shell("dumpsys","activity","activities");m=re.search(r"mResumedActivity:.*?\s([A-Za-z0-9._]+)/",act)
             r["app"]=m.group(1) if m else ""
+            try:r["cec_setting"]=self.shell("settings","get","global","hdmi_control_enabled").strip()
+            except Exception:r["cec_setting"]="unknown"
         except Exception as e:r["error"]=str(e)
         return r
     def list_apps(self):
@@ -105,9 +124,11 @@ class FireTV:
     def command(self,action,value=None):
         a=str(action).strip().lower()
         if a=="status":return self.status()
+        if a in ("volumeup","volumedown","mute"):return self.volume(a)
         if a in KEYS:return self.key(a)
         if a=="standby":return self.key("sleep")
-        if a in ("on","wake"):return self.key("wakeup")
+        if a in ("on","wake","tvon","tv_on"):return self.tv_on()
+        if a in ("off","tvoff","tv_off"):return self.tv_off()
         if a=="reboot":self._run(["adb","-s",self.target,"reboot"]);return {"ok":True,"action":"reboot"}
         if a in ("app","launch"):
             if not value:raise ValueError("App/Package fehlt")
