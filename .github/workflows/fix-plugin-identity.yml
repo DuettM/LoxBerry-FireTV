@@ -1,0 +1,31 @@
+name: Repair FireTV plugin identity
+on:
+  push:
+    paths:
+      - '.github/workflows/fix-plugin-identity.yml'
+permissions:
+  contents: write
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore immutable plugin identity
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('plugin.cfg')
+          s=p.read_text(encoding='utf-8')
+          s=s.replace('NAME=Marco Düthorn\nEMAIL=', 'NAME=Düthorn Marco\nEMAIL=', 1)
+          s=s.replace('VERSION=0.2.1', 'VERSION=0.2.2', 1)
+          p.write_text(s, encoding='utf-8', newline='\n')
+          PY
+          grep -q '^NAME=Düthorn Marco$' plugin.cfg
+          grep -q '^VERSION=0.2.2$' plugin.cfg
+      - name: Commit repair
+        run: |
+          git config user.name github-actions
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add plugin.cfg
+          git commit -m 'Restore FireTV plugin identity for v0.2.2'
+          git push
