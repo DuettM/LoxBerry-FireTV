@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - '.package-trigger-firetv-020'
+      - '.package-trigger-firetv-current'
 permissions:
   contents: read
 jobs:
@@ -11,33 +11,59 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Read plugin version
+        id: version
+        shell: bash
+        run: |
+          VERSION="$(awk -F= '/^VERSION=/{print $2; exit}' plugin.cfg)"
+          test -n "$VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
       - name: Validate sources
         run: |
-          python3 -m py_compile bin/firetv.py bin/mqtt_listener.py bin/watchdog.py bin/secure_update.py
+          python3 -m py_compile bin/firetv.py bin/mqtt_listener.py bin/watchdog.py bin/secure_update.py webfrontend/htmlauth/index.cgi webfrontend/htmlauth/config.cgi webfrontend/htmlauth/api.cgi webfrontend/htmlauth/debug.cgi
           bash -n postinstall.sh postupgrade.sh preupgrade.sh daemon/daemon cron/cron.01min uninstall/uninstall.sh
+          python3 -m json.tool config/config.default.json >/dev/null
+          test -f dpkg/apt
+          grep -qx 'adb' dpkg/apt
+          test -s icons/icon.svg
+          test -s icons/icon_64.png
+          test -s icons/icon_128.png
+          test -s icons/icon_256.png
+          test -s icons/icon_512.png
+          ! grep -RIn --exclude-dir=.git '/opt/loxberry' .
       - name: Build deterministic ZIP
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           python3 - <<'PY'
           import os,stat,zipfile
-          out='LoxBerry-FireTV-0.2.0.zip'
-          roots=['bin','config','cron','daemon','uninstall','webfrontend']
+          version=os.environ['VERSION']
+          out=f'LoxBerry-FireTV-{version}.zip'
+          roots=['bin','config','cron','daemon','dpkg','icons','uninstall','webfrontend']
           singles=['plugin.cfg','postinstall.sh','postupgrade.sh','preupgrade.sh','release.cfg','prerelease.cfg','README.md','CHANGELOG.md','LICENSE','LEGAL.md','SECURITY.md']
           files=[]
           for root in roots:
+              if not os.path.isdir(root): continue
               for dp,_,names in os.walk(root):
                   for n in names: files.append(os.path.join(dp,n))
           files += [p for p in singles if os.path.isfile(p)]
           files=sorted(set(files))
           with zipfile.ZipFile(out,'w',zipfile.ZIP_DEFLATED,compresslevel=9) as z:
               for p in files:
-                  data=open(p,'rb').read(); zi=zipfile.ZipInfo(p.replace(os.sep,'/'),(2026,1,1,0,0,0)); zi.compress_type=zipfile.ZIP_DEFLATED
-                  mode=0o755 if os.stat(p).st_mode & stat.S_IXUSR else 0o644; zi.external_attr=(mode & 0xffff)<<16; zi.create_system=3
+                  data=open(p,'rb').read()
+                  zi=zipfile.ZipInfo(p.replace(os.sep,'/'),(2026,1,1,0,0,0))
+                  zi.compress_type=zipfile.ZIP_DEFLATED
+                  mode=0o755 if os.stat(p).st_mode & stat.S_IXUSR else 0o644
+                  zi.external_attr=(mode & 0xffff)<<16
+                  zi.create_system=3
                   z.writestr(zi,data,compress_type=zipfile.ZIP_DEFLATED,compresslevel=9)
           PY
-          sha256sum LoxBerry-FireTV-0.2.0.zip
+          sha256sum "LoxBerry-FireTV-${VERSION}.zip" > "LoxBerry-FireTV-${VERSION}.zip.sha256"
       - uses: actions/upload-artifact@v4
         with:
-          name: firetv-0.2.0-package
-          path: LoxBerry-FireTV-0.2.0.zip
+          name: firetv-${{ steps.version.outputs.version }}-package
+          path: |
+            LoxBerry-FireTV-${{ steps.version.outputs.version }}.zip
+            LoxBerry-FireTV-${{ steps.version.outputs.version }}.zip.sha256
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 14
