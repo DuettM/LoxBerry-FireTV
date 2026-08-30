@@ -4,6 +4,8 @@ PDIR="${3:-firetv}"
 PCONFIG="${LBPCONFIG:?LBPCONFIG missing}/$PDIR"
 PBIN="${LBPBIN:?LBPBIN missing}/$PDIR"
 PLOG="${LBPLOG:?LBPLOG missing}/$PDIR"
+PHTMLAUTH="${LBPHTMLAUTH:?LBPHTMLAUTH missing}/$PDIR"
+PHTML="${LBPHTML:?LBPHTML missing}/$PDIR"
 mkdir -p "$PCONFIG" "$PLOG"
 if [ ! -f "$PCONFIG/config.json" ]; then cp "$PCONFIG/config.default.json" "$PCONFIG/config.json" || exit 1; fi
 python3 - "$PCONFIG/config.json" <<'PY'
@@ -20,6 +22,7 @@ PY
 chmod 700 "$PCONFIG" "$PLOG" 2>/dev/null || true
 chmod 600 "$PCONFIG/config.json" 2>/dev/null || true
 chmod 700 "$PBIN/firetv.py" "$PBIN/mqtt_listener.py" "$PBIN/watchdog.py" "$PBIN/secure_update.py" 2>/dev/null || true
+chmod 755 "$PHTMLAUTH/index.cgi" "$PHTMLAUTH/config.cgi" "$PHTMLAUTH/debug.cgi" "$PHTMLAUTH/api.cgi" "$PHTML/firetv.cgi" 2>/dev/null || true
 chmod 600 "$PBIN/update_public_key.hex" 2>/dev/null || true
 if ! command -v adb >/dev/null 2>&1; then
  echo "<WARNING> ADB ist nach der LoxBerry-Paketinstallation nicht verfügbar. Erwartetes Debian-Paket: adb (dpkg/apt)."
@@ -29,5 +32,5 @@ fi
 touch "$PLOG/firetv.log" "$PLOG/mqtt-daemon.log" "$PLOG/watchdog.log"
 chmod 600 "$PLOG/"*.log 2>/dev/null || true
 chown -R loxberry:loxberry "$PCONFIG" "$PLOG" 2>/dev/null || true
-echo "<INFO> Fire TV Control 0.2.1 installiert. MQTT-Listener wird über den nativen LoxBerry-Daemonmechanismus gestartet."
+echo "<INFO> Fire TV Control 0.2.1 installiert. CGI-Rechte wurden gesetzt."
 exit 0
