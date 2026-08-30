@@ -1,7 +1,8 @@
 #!/bin/bash
 set -u
 if [ -z "${LBHOMEDIR:-}" ] && [ -r /etc/environment ]; then . /etc/environment; fi
-ROOT="${LBHOMEDIR:-${LBHOME:-/opt/loxberry}}"
+ROOT="${LBHOMEDIR:-${LBHOME:-}}"
+[ -n "$ROOT" ] || exit 0
 DB="$ROOT/data/system/plugindatabase.json"
 FOLDER=""
 if [ -r "$DB" ]; then
