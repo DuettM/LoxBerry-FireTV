@@ -30,7 +30,7 @@ jobs:
           test -s icons/icon_128.png
           test -s icons/icon_256.png
           test -s icons/icon_512.png
-          ! grep -RIn --exclude-dir=.git '/opt/loxberry' .
+          ! grep -RIn --exclude-dir=.git --exclude-dir=.github '/opt/loxberry' .
       - name: Build deterministic ZIP
         env:
           VERSION: ${{ steps.version.outputs.version }}
