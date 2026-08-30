@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
-import cgi,hashlib,hmac,html,ipaddress,json,os,re,tempfile
+import cgi,hashlib,hmac,html,ipaddress,json,os,re,tempfile,sys
 
-def root(): return os.environ.get('LBHOMEDIR') or os.environ.get('LBHOME') or '/opt/loxberry'
+def root():
+ r=os.environ.get('LBHOMEDIR') or os.environ.get('LBHOME')
+ if not r: raise RuntimeError('LBHOMEDIR/LBHOME ist in der CGI-Umgebung nicht gesetzt')
+ return r
 def folder():
  p=os.path.abspath(os.environ.get('SCRIPT_FILENAME') or __file__)
  parts=p.split(os.sep)
@@ -31,7 +34,11 @@ def clean_topic(v):
 def valid_ip(v):
  try:ipaddress.ip_address(v);return True
  except ValueError:return bool(re.fullmatch(r'[A-Za-z0-9.-]{1,253}',v or ''))
-f=cgi.FieldStorage();c=load();notice='';error='';token=csrf(c)
+try:c=load()
+except Exception as e:
+ print('Content-Type: text/html; charset=utf-8\r\nStatus: 500 Internal Server Error\r\n\r\n')
+ print('<h1>Fire TV Control</h1><p>Konfiguration konnte nicht geladen werden: %s</p>'%html.escape(str(e)));sys.exit(0)
+f=cgi.FieldStorage();notice='';error='';token=csrf(c)
 if os.environ.get('REQUEST_METHOD','GET').upper()=='POST':
  try:
   if not same_site() or not valid_csrf(c,f.getfirst('csrf','')):raise ValueError('Sicherheitsprüfung fehlgeschlagen.')
@@ -55,12 +62,11 @@ if os.environ.get('REQUEST_METHOD','GET').upper()=='POST':
   else:raise ValueError('Unbekannte Aktion.')
  except Exception as e:error=str(e)
 print('Content-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\n\r\n')
-print('<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fire TV Konfiguration</title><style>body{font-family:system-ui;max-width:1000px;margin:auto;padding:20px}section{padding:16px;margin:14px 0;border:1px solid #ddd;border-radius:10px}input{padding:7px;margin:4px}button{padding:8px 12px;background:#ff9900;border:0;border-radius:6px}.err{color:#b3261e}</style></head><body><h1>Fire TV Control – Konfiguration</h1><p><a href="index.cgi">Dashboard</a> · <a href="debug.cgi">Debug</a></p>')
+print('<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fire TV Konfiguration</title></head><body><h1>Fire TV Control – Konfiguration</h1><p><a href="index.cgi">Dashboard</a> · <a href="debug.cgi">Debug</a></p>')
 if notice:print('<p><b>%s</b></p>'%html.escape(notice))
-if error:print('<p class="err"><b>%s</b></p>'%html.escape(error))
+if error:print('<p><b>%s</b></p>'%html.escape(error))
 csrf_h='<input type="hidden" name="csrf" value="%s">'%html.escape(token,quote=True)
 print('<section><h2>Allgemein</h2><form method="post">%s<input type="hidden" name="form_action" value="save_general"><label>Abfrageintervall <input type="number" min="10" max="3600" name="poll_interval" value="%s"></label><br><label>MQTT Basistopic <input name="base_topic" maxlength="128" value="%s"></label><br><label><input type="checkbox" name="mqtt_enabled" %s> MQTT aktiv</label><br><label><input type="checkbox" name="mqtt_listen" %s> Befehle empfangen</label><br><label><input type="checkbox" name="watchdog_enabled" %s> Watchdog aktiv</label><br><button>Speichern</button></form></section>'%(csrf_h,c.get('poll_interval',30),html.escape(c.get('mqtt',{}).get('base_topic','firetv'),quote=True),'checked' if c.get('mqtt',{}).get('enabled',True) else '','checked' if c.get('mqtt',{}).get('listen_enabled',True) else '','checked' if c.get('watchdog',{}).get('enabled',True) else ''))
 print('<section><h2>Fire TV hinzufügen</h2><form method="post">%s<input type="hidden" name="form_action" value="add_device"><input name="name" maxlength="80" placeholder="Wohnzimmer" required><input name="ip" maxlength="253" placeholder="192.168.1.50" required><input name="port" type="number" min="1" max="65535" value="5555"><button>Hinzufügen</button></form></section><section><h2>Geräte</h2>'%csrf_h)
-for d in c.get('devices',[]):
- print('<p><b>%s</b> · %s:%s · MQTT-ID <code>%s</code> <form method="post" style="display:inline">%s<input type="hidden" name="form_action" value="delete"><input type="hidden" name="id" value="%s"><button>Löschen</button></form></p>'%(html.escape(str(d.get('name',''))),html.escape(str(d.get('ip',''))),d.get('port',5555),html.escape(str(d.get('id',''))),csrf_h,html.escape(str(d.get('id','')),quote=True)))
-print('</section><footer>Fire TV Control · v0.2.0</footer></body></html>')
+for d in c.get('devices',[]): print('<p><b>%s</b> · %s:%s · MQTT-ID <code>%s</code></p>'%(html.escape(str(d.get('name',''))),html.escape(str(d.get('ip',''))),d.get('port',5555),html.escape(str(d.get('id','')))))
+print('</section><footer>Fire TV Control · v0.2.1</footer></body></html>')
