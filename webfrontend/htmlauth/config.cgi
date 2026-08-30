@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-import cgi,hashlib,hmac,html,ipaddress,json,os,re,tempfile,sys
+import hashlib,hmac,html,ipaddress,json,os,re,tempfile,sys
+from urllib.parse import parse_qs
 
 def root():
  p=os.path.abspath(os.environ.get('SCRIPT_FILENAME') or __file__)
@@ -9,9 +10,19 @@ def root():
  if r:return r
  raise RuntimeError('LoxBerry Basisverzeichnis konnte nicht ermittelt werden')
 def folder():
- p=os.path.abspath(os.environ.get('SCRIPT_FILENAME') or __file__)
- parts=p.split(os.sep)
+ p=os.path.abspath(os.environ.get('SCRIPT_FILENAME') or __file__);parts=p.split(os.sep)
  return parts[parts.index('plugins')+1] if 'plugins' in parts else 'firetv'
+def form_data():
+ data={k:v[-1] if v else '' for k,v in parse_qs(os.environ.get('QUERY_STRING',''),keep_blank_values=True).items()}
+ if os.environ.get('REQUEST_METHOD','GET').upper()=='POST':
+  try:length=min(max(int(os.environ.get('CONTENT_LENGTH','0') or 0),0),65536)
+  except ValueError:length=0
+  ctype=(os.environ.get('CONTENT_TYPE','') or '').split(';',1)[0].strip().lower()
+  raw=sys.stdin.buffer.read(length) if length else b''
+  if ctype=='application/x-www-form-urlencoded':
+   body=parse_qs(raw.decode('utf-8','replace'),keep_blank_values=True)
+   for k,v in body.items():data[k]=v[-1] if v else ''
+ return data
 FOLDER=folder();CFG=os.path.join(root(),'config','plugins',FOLDER,'config.json')
 def load():
  with open(CFG,encoding='utf-8') as f:return json.load(f)
@@ -41,17 +52,17 @@ try:c=load()
 except Exception as e:
  print('Status: 500 Internal Server Error\r\nContent-Type: text/html; charset=utf-8\r\n\r\n',end='')
  print('<h1>Fire TV Control</h1><p>Konfiguration konnte nicht geladen werden: %s</p>'%html.escape(str(e)));sys.exit(0)
-f=cgi.FieldStorage();notice='';error='';token=csrf(c)
+f=form_data();notice='';error='';token=csrf(c)
 if os.environ.get('REQUEST_METHOD','GET').upper()=='POST':
  try:
-  if not same_site() or not valid_csrf(c,f.getfirst('csrf','')):raise ValueError('Sicherheitsprüfung fehlgeschlagen.')
-  act=f.getfirst('form_action','')
+  if not same_site() or not valid_csrf(c,f.get('csrf','')):raise ValueError('Sicherheitsprüfung fehlgeschlagen.')
+  act=f.get('form_action','')
   if act=='save_general':
-   poll=int(f.getfirst('poll_interval','30'))
+   poll=int(f.get('poll_interval','30'))
    if poll<10 or poll>3600:raise ValueError('Abfrageintervall muss zwischen 10 und 3600 Sekunden liegen.')
-   c['poll_interval']=poll;c.setdefault('mqtt',{})['enabled']=bool(f.getfirst('mqtt_enabled'));c['mqtt']['listen_enabled']=bool(f.getfirst('mqtt_listen'));c['mqtt']['base_topic']=clean_topic(f.getfirst('base_topic','firetv'));c.setdefault('watchdog',{})['enabled']=bool(f.getfirst('watchdog_enabled'));save(c);notice='Einstellungen gespeichert.'
+   c['poll_interval']=poll;c.setdefault('mqtt',{})['enabled']=bool(f.get('mqtt_enabled'));c['mqtt']['listen_enabled']=bool(f.get('mqtt_listen'));c['mqtt']['base_topic']=clean_topic(f.get('base_topic','firetv'));c.setdefault('watchdog',{})['enabled']=bool(f.get('watchdog_enabled'));save(c);notice='Einstellungen gespeichert.'
   elif act=='add_device':
-   ip=(f.getfirst('ip','') or '').strip();name=(f.getfirst('name','Fire TV') or '').strip();port=int(f.getfirst('port','5555'))
+   ip=(f.get('ip','') or '').strip();name=(f.get('name','Fire TV') or '').strip();port=int(f.get('port','5555'))
    if not valid_ip(ip):raise ValueError('IP/Hostname ungültig.')
    if not name or len(name)>80 or re.search(r'[\r\n\x00]',name):raise ValueError('Gerätename ungültig.')
    if port<1 or port>65535:raise ValueError('Port ungültig.')
@@ -59,7 +70,7 @@ if os.environ.get('REQUEST_METHOD','GET').upper()=='POST':
    if any(str(d.get('id'))==ident for d in c.get('devices',[])):raise ValueError('Geräte-ID existiert bereits.')
    c.setdefault('devices',[]).append({'id':ident,'name':name,'ip':ip,'port':port,'enabled':True});save(c);notice='Gerät hinzugefügt. ADB-Verbindung am Fire TV bestätigen.'
   elif act=='delete':
-   ident=f.getfirst('id','') or ''
+   ident=f.get('id','') or ''
    if len(ident)>128 or re.search(r'[\r\n\x00]',ident):raise ValueError('Geräte-ID ungültig.')
    c['devices']=[d for d in c.get('devices',[]) if str(d.get('id',''))!=ident];save(c);notice='Gerät gelöscht.'
   else:raise ValueError('Unbekannte Aktion.')
@@ -72,4 +83,4 @@ csrf_h='<input type="hidden" name="csrf" value="%s">'%html.escape(token,quote=Tr
 print('<section><h2>Allgemein</h2><form method="post">%s<input type="hidden" name="form_action" value="save_general"><label>Abfrageintervall <input type="number" min="10" max="3600" name="poll_interval" value="%s"></label><br><label>MQTT Basistopic <input name="base_topic" maxlength="128" value="%s"></label><br><label><input type="checkbox" name="mqtt_enabled" %s> MQTT aktiv</label><br><label><input type="checkbox" name="mqtt_listen" %s> Befehle empfangen</label><br><label><input type="checkbox" name="watchdog_enabled" %s> Watchdog aktiv</label><br><button>Speichern</button></form></section>'%(csrf_h,c.get('poll_interval',30),html.escape(c.get('mqtt',{}).get('base_topic','firetv'),quote=True),'checked' if c.get('mqtt',{}).get('enabled',True) else '','checked' if c.get('mqtt',{}).get('listen_enabled',True) else '','checked' if c.get('watchdog',{}).get('enabled',True) else ''))
 print('<section><h2>Fire TV hinzufügen</h2><form method="post">%s<input type="hidden" name="form_action" value="add_device"><input name="name" maxlength="80" placeholder="Wohnzimmer" required><input name="ip" maxlength="253" placeholder="192.168.1.50" required><input name="port" type="number" min="1" max="65535" value="5555"><button>Hinzufügen</button></form></section><section><h2>Geräte</h2>'%csrf_h)
 for d in c.get('devices',[]): print('<p><b>%s</b> · %s:%s · MQTT-ID <code>%s</code></p>'%(html.escape(str(d.get('name',''))),html.escape(str(d.get('ip',''))),d.get('port',5555),html.escape(str(d.get('id','')))))
-print('</section><footer>Fire TV Control · Düthorn Marco · 2026 · v0.2.3</footer></body></html>')
+print('</section><footer>Fire TV Control · Marco Düthorn · 2026 · v0.2.5</footer></body></html>')
