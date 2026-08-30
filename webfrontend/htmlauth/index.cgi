@@ -2,10 +2,12 @@
 import cgi,hashlib,hmac,html,json,os,re,subprocess,sys
 
 def root():
+ p=os.path.abspath(os.environ.get('SCRIPT_FILENAME') or __file__)
+ marker=os.sep+'webfrontend'+os.sep
+ if marker in p:return p.split(marker,1)[0]
  r=os.environ.get('LBHOMEDIR') or os.environ.get('LBHOME')
- if not r:
-  raise RuntimeError('LBHOMEDIR/LBHOME ist in der CGI-Umgebung nicht gesetzt')
- return r
+ if r:return r
+ raise RuntimeError('LoxBerry Basisverzeichnis konnte nicht ermittelt werden')
 def folder():
  p=os.path.abspath(os.environ.get('SCRIPT_FILENAME') or __file__);parts=p.split(os.sep);return parts[parts.index('plugins')+1] if 'plugins' in parts else 'firetv'
 FOLDER=folder();CFG=os.path.join(root(),'config','plugins',FOLDER,'config.json');BIN=os.path.join(root(),'bin','plugins',FOLDER)
@@ -22,7 +24,7 @@ def same_site():
 try:
  c=json.load(open(CFG,encoding='utf-8'))
 except Exception as e:
- print('Content-Type: text/html; charset=utf-8\r\nStatus: 500 Internal Server Error\r\n\r\n')
+ print('Status: 500 Internal Server Error\r\nContent-Type: text/html; charset=utf-8\r\n\r\n',end='')
  print('<h1>Fire TV Control</h1><p>Konfiguration konnte nicht geladen werden: %s</p>'%html.escape(str(e)))
  sys.exit(0)
 f=cgi.FieldStorage();msg='';err='';token=csrf(c)
@@ -55,4 +57,4 @@ for d in c.get('devices',[]):
  print('<form method="post">%s<div class="remote"><span></span><button name="action" value="up">▲</button><span></span><button name="action" value="left">◀</button><button name="action" value="ok">OK</button><button name="action" value="right">▶</button><span></span><button name="action" value="down">▼</button><span></span></div><p style="text-align:center"><button name="action" value="back">Zurück</button><button name="action" value="home">Home</button><button name="action" value="menu">Menü</button></p><p style="text-align:center"><button name="action" value="playpause">Play/Pause</button><button name="action" value="volumedown">Vol −</button><button name="action" value="mute">Mute</button><button name="action" value="volumeup">Vol +</button></p><p style="text-align:center"><button name="action" value="wakeup">Aufwecken</button><button name="action" value="standby">Standby</button></p><p><input name="value" maxlength="256" placeholder="netflix / youtube / Package-ID"><button name="action" value="app">App starten</button></p></form></section>'%hidden)
 print('</div>')
 if not c.get('devices'):print('<div class="card"><h2>Noch kein Fire TV angelegt</h2><p>Unter Konfiguration ein Gerät hinzufügen.</p></div>')
-print('<footer style="text-align:center;margin:30px">Fire TV Control · v0.2.1</footer></div></body></html>')
+print('<footer style="text-align:center;margin:30px">Fire TV Control · Düthorn Marco · 2026 · v0.2.3</footer></div></body></html>')
