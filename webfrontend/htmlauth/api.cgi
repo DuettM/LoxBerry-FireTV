@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 import cgi,hashlib,hmac,json,os,re,subprocess,sys
 
-def root(): return os.environ.get('LBHOMEDIR') or os.environ.get('LBHOME') or '/opt/loxberry'
+def root():
+ r=os.environ.get('LBHOMEDIR') or os.environ.get('LBHOME')
+ if not r: raise RuntimeError('LBHOMEDIR/LBHOME ist in der CGI-Umgebung nicht gesetzt')
+ return r
 def folder():
  p=os.path.abspath(os.environ.get('SCRIPT_FILENAME') or __file__);parts=p.split(os.sep)
  return parts[parts.index('plugins')+1] if 'plugins' in parts and parts.index('plugins')+1 < len(parts) else 'firetv'
