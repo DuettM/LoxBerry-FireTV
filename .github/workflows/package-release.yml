@@ -20,7 +20,7 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
       - name: Validate sources
         run: |
-          python3 -m py_compile bin/firetv.py bin/mqtt_listener.py bin/watchdog.py bin/secure_update.py webfrontend/htmlauth/index.cgi webfrontend/htmlauth/config.cgi webfrontend/htmlauth/api.cgi webfrontend/htmlauth/debug.cgi
+          python3 -m py_compile bin/firetv.py bin/mqtt_listener.py bin/watchdog.py bin/secure_update.py webfrontend/htmlauth/index.cgi webfrontend/htmlauth/config.cgi webfrontend/htmlauth/discover.cgi webfrontend/htmlauth/api.cgi webfrontend/htmlauth/debug.cgi
           bash -n postinstall.sh postupgrade.sh preupgrade.sh daemon/daemon cron/cron.01min uninstall/uninstall.sh
           python3 -m json.tool config/config.default.json >/dev/null
           test -f dpkg/apt
