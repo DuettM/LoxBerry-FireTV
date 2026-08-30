@@ -1,6 +1,7 @@
 #!/bin/bash
 set -u
-ROOT="${LBHOMEDIR:-${LBHOME:-/opt/loxberry}}"
+ROOT="${LBHOMEDIR:-${LBHOME:-}}"
+[ -n "$ROOT" ] || exit 0
 FOLDER="firetv"
 CFG="$ROOT/config/plugins/$FOLDER/config.json"
 BIN="$ROOT/bin/plugins/$FOLDER"
