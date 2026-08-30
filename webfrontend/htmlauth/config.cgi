@@ -2,9 +2,12 @@
 import cgi,hashlib,hmac,html,ipaddress,json,os,re,tempfile,sys
 
 def root():
+ p=os.path.abspath(os.environ.get('SCRIPT_FILENAME') or __file__)
+ marker=os.sep+'webfrontend'+os.sep
+ if marker in p:return p.split(marker,1)[0]
  r=os.environ.get('LBHOMEDIR') or os.environ.get('LBHOME')
- if not r: raise RuntimeError('LBHOMEDIR/LBHOME ist in der CGI-Umgebung nicht gesetzt')
- return r
+ if r:return r
+ raise RuntimeError('LoxBerry Basisverzeichnis konnte nicht ermittelt werden')
 def folder():
  p=os.path.abspath(os.environ.get('SCRIPT_FILENAME') or __file__)
  parts=p.split(os.sep)
@@ -36,7 +39,7 @@ def valid_ip(v):
  except ValueError:return bool(re.fullmatch(r'[A-Za-z0-9.-]{1,253}',v or ''))
 try:c=load()
 except Exception as e:
- print('Content-Type: text/html; charset=utf-8\r\nStatus: 500 Internal Server Error\r\n\r\n')
+ print('Status: 500 Internal Server Error\r\nContent-Type: text/html; charset=utf-8\r\n\r\n',end='')
  print('<h1>Fire TV Control</h1><p>Konfiguration konnte nicht geladen werden: %s</p>'%html.escape(str(e)));sys.exit(0)
 f=cgi.FieldStorage();notice='';error='';token=csrf(c)
 if os.environ.get('REQUEST_METHOD','GET').upper()=='POST':
@@ -69,4 +72,4 @@ csrf_h='<input type="hidden" name="csrf" value="%s">'%html.escape(token,quote=Tr
 print('<section><h2>Allgemein</h2><form method="post">%s<input type="hidden" name="form_action" value="save_general"><label>Abfrageintervall <input type="number" min="10" max="3600" name="poll_interval" value="%s"></label><br><label>MQTT Basistopic <input name="base_topic" maxlength="128" value="%s"></label><br><label><input type="checkbox" name="mqtt_enabled" %s> MQTT aktiv</label><br><label><input type="checkbox" name="mqtt_listen" %s> Befehle empfangen</label><br><label><input type="checkbox" name="watchdog_enabled" %s> Watchdog aktiv</label><br><button>Speichern</button></form></section>'%(csrf_h,c.get('poll_interval',30),html.escape(c.get('mqtt',{}).get('base_topic','firetv'),quote=True),'checked' if c.get('mqtt',{}).get('enabled',True) else '','checked' if c.get('mqtt',{}).get('listen_enabled',True) else '','checked' if c.get('watchdog',{}).get('enabled',True) else ''))
 print('<section><h2>Fire TV hinzufügen</h2><form method="post">%s<input type="hidden" name="form_action" value="add_device"><input name="name" maxlength="80" placeholder="Wohnzimmer" required><input name="ip" maxlength="253" placeholder="192.168.1.50" required><input name="port" type="number" min="1" max="65535" value="5555"><button>Hinzufügen</button></form></section><section><h2>Geräte</h2>'%csrf_h)
 for d in c.get('devices',[]): print('<p><b>%s</b> · %s:%s · MQTT-ID <code>%s</code></p>'%(html.escape(str(d.get('name',''))),html.escape(str(d.get('ip',''))),d.get('port',5555),html.escape(str(d.get('id','')))))
-print('</section><footer>Fire TV Control · v0.2.1</footer></body></html>')
+print('</section><footer>Fire TV Control · Düthorn Marco · 2026 · v0.2.3</footer></body></html>')
