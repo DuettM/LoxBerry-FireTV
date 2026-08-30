@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-import cgi,hashlib,hmac,json,os,re,subprocess,sys
+import hashlib,hmac,json,os,re,subprocess,sys
+from urllib.parse import parse_qs
 
 def root():
  p=os.path.abspath(os.environ.get('SCRIPT_FILENAME') or __file__)
@@ -11,6 +12,22 @@ def root():
 def folder():
  p=os.path.abspath(os.environ.get('SCRIPT_FILENAME') or __file__);parts=p.split(os.sep)
  return parts[parts.index('plugins')+1] if 'plugins' in parts and parts.index('plugins')+1 < len(parts) else 'firetv'
+def request_data():
+ data={k:v[-1] if v else '' for k,v in parse_qs(os.environ.get('QUERY_STRING',''),keep_blank_values=True).items()}
+ if os.environ.get('REQUEST_METHOD','GET').upper()=='POST':
+  try:length=min(max(int(os.environ.get('CONTENT_LENGTH','0') or 0),0),65536)
+  except ValueError:length=0
+  ctype=(os.environ.get('CONTENT_TYPE','') or '').split(';',1)[0].strip().lower()
+  raw=sys.stdin.buffer.read(length) if length else b''
+  if ctype=='application/x-www-form-urlencoded':
+   body=parse_qs(raw.decode('utf-8','replace'),keep_blank_values=True)
+   for k,v in body.items():data[k]=v[-1] if v else ''
+  elif ctype=='application/json' and raw:
+   try:
+    obj=json.loads(raw.decode('utf-8','replace'))
+    if isinstance(obj,dict):data.update({str(k):'' if v is None else str(v) for k,v in obj.items()})
+   except Exception:pass
+ return data
 FOLDER=folder();CFG=os.path.join(root(),'config','plugins',FOLDER,'config.json');BIN=os.path.join(root(),'bin','plugins',FOLDER)
 
 def out(o,code=200):
@@ -31,7 +48,7 @@ def same_site():
    if m and m.group(1)!=host:out({'ok':False,'error':'Cross-Site-Anfrage blockiert.'},403)
 try:c=json.load(open(CFG,encoding='utf-8'))
 except Exception as e:out({'ok':False,'error':'Konfiguration konnte nicht gelesen werden: '+str(e)},500)
-f=cgi.FieldStorage();dev=(f.getfirst('device') or '').strip();action=(f.getfirst('action') or 'status').strip().lower();value=f.getfirst('value')
+f=request_data();dev=(f.get('device') or '').strip();action=(f.get('action') or 'status').strip().lower();value=f.get('value')
 read_actions={'status','apps'};write_actions={'home','back','up','down','left','right','ok','enter','menu','playpause','stop','next','previous','rewind','fastforward','mute','volumeup','volumedown','wakeup','standby','on','wake','reboot','app','launch','text'}
 if action not in read_actions|write_actions:out({'ok':False,'error':'Ungültiger Befehl.'},400)
 if not dev:
