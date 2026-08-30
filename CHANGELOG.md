@@ -10,7 +10,7 @@
 
 ## 0.2.2
 - CI- und Paketierungsprüfungen verbessert
-- Hardcodierte `/opt/loxberry`-Fallbacks entfernt
+- Hardcodierte LoxBerry-Basisverzeichnis-Fallbacks entfernt
 
 ## 0.1.0
 - Erste Version
