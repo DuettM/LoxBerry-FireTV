@@ -17,10 +17,25 @@ jobs:
           bash -n postinstall.sh preupgrade.sh postupgrade.sh daemon/daemon cron/cron.01min uninstall/uninstall.sh
       - name: JSON config
         run: python3 -m json.tool config/config.default.json >/dev/null
-      - name: Security baseline
+      - name: Plugin baseline
         run: |
-          grep -q 'VERSION=0.2.0' plugin.cfg
-          grep -q 'AUTOMATIC_UPDATES=false' plugin.cfg
+          grep -Eq '^VERSION=[0-9]+\.[0-9]+\.[0-9]+$' plugin.cfg
+          grep -q '^AUTOMATIC_UPDATES=true$' plugin.cfg
           grep -q 'web_secret' config/config.default.json
           grep -q 'hmac.compare_digest' webfrontend/htmlauth/config.cgi
           grep -q 'runuser -u loxberry' daemon/daemon
+          test -f dpkg/apt
+          grep -qx 'adb' dpkg/apt
+      - name: LoxBerry path compliance
+        run: |
+          if grep -RIn --exclude-dir=.git '/opt/loxberry' .; then
+            echo 'Hardcoded /opt/loxberry path found'
+            exit 1
+          fi
+      - name: Icon set
+        run: |
+          test -s icons/icon.svg
+          test -s icons/icon_64.png
+          test -s icons/icon_128.png
+          test -s icons/icon_256.png
+          test -s icons/icon_512.png
