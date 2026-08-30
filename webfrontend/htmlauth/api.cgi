@@ -2,9 +2,12 @@
 import cgi,hashlib,hmac,json,os,re,subprocess,sys
 
 def root():
+ p=os.path.abspath(os.environ.get('SCRIPT_FILENAME') or __file__)
+ marker=os.sep+'webfrontend'+os.sep
+ if marker in p:return p.split(marker,1)[0]
  r=os.environ.get('LBHOMEDIR') or os.environ.get('LBHOME')
- if not r: raise RuntimeError('LBHOMEDIR/LBHOME ist in der CGI-Umgebung nicht gesetzt')
- return r
+ if r:return r
+ raise RuntimeError('LoxBerry Basisverzeichnis konnte nicht ermittelt werden')
 def folder():
  p=os.path.abspath(os.environ.get('SCRIPT_FILENAME') or __file__);parts=p.split(os.sep)
  return parts[parts.index('plugins')+1] if 'plugins' in parts and parts.index('plugins')+1 < len(parts) else 'firetv'
@@ -27,7 +30,7 @@ def same_site():
    m=re.match(r'^https?://([^/]+)',v)
    if m and m.group(1)!=host:out({'ok':False,'error':'Cross-Site-Anfrage blockiert.'},403)
 try:c=json.load(open(CFG,encoding='utf-8'))
-except Exception:out({'ok':False,'error':'Konfiguration konnte nicht gelesen werden.'},500)
+except Exception as e:out({'ok':False,'error':'Konfiguration konnte nicht gelesen werden: '+str(e)},500)
 f=cgi.FieldStorage();dev=(f.getfirst('device') or '').strip();action=(f.getfirst('action') or 'status').strip().lower();value=f.getfirst('value')
 read_actions={'status','apps'};write_actions={'home','back','up','down','left','right','ok','enter','menu','playpause','stop','next','previous','rewind','fastforward','mute','volumeup','volumedown','wakeup','standby','on','wake','reboot','app','launch','text'}
 if action not in read_actions|write_actions:out({'ok':False,'error':'Ungültiger Befehl.'},400)
