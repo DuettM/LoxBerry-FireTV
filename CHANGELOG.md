@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.8
+- Automatische Fire-TV-Suche im lokalen IPv4-Netz hinzugefügt
+- Scan prüft ADB auf TCP-Port 5555 und begrenzt sich auf maximal 254 Hosts
+- Gefundene Geräte können direkt aus der Suche übernommen werden
+- Bereits konfigurierte Geräte werden erkannt und markiert
+- ADB-Autorisierungsstatus wird bei gefundenen Geräten angezeigt
+
 ## 0.2.7
 - Konfiguration wird vor einem Plugin-Update gesichert und danach wiederhergestellt
 - Upgrade-Pfad schützt `config.json` vor Überschreiben
