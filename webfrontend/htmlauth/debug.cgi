@@ -2,9 +2,12 @@
 import html,json,os,re,subprocess
 
 def root():
+ p=os.path.abspath(os.environ.get('SCRIPT_FILENAME') or __file__)
+ marker=os.sep+'webfrontend'+os.sep
+ if marker in p:return p.split(marker,1)[0]
  r=os.environ.get('LBHOMEDIR') or os.environ.get('LBHOME')
- if not r: raise RuntimeError('LBHOMEDIR/LBHOME ist in der CGI-Umgebung nicht gesetzt')
- return r
+ if r:return r
+ raise RuntimeError('LoxBerry Basisverzeichnis konnte nicht ermittelt werden')
 def folder():
  p=os.path.abspath(os.environ.get('SCRIPT_FILENAME') or __file__);parts=p.split(os.sep);return parts[parts.index('plugins')+1] if 'plugins' in parts else 'firetv'
 FOLDER=folder();CFG=os.path.join(root(),'config','plugins',FOLDER,'config.json');LOG=os.path.join(root(),'log','plugins',FOLDER,'firetv.log')
@@ -27,4 +30,4 @@ print('<h2>Log (bereinigt)</h2><pre>')
 try:
  lines=open(LOG,encoding='utf-8',errors='replace').read().splitlines()[-100:];print(html.escape('\n'.join(redact(x,c) for x in lines)))
 except Exception as e:print(html.escape(str(e)))
-print('</pre><footer>Fire TV Control · Düthorn Marco · 2026 · v0.2.2</footer></body></html>')
+print('</pre><footer>Fire TV Control · Düthorn Marco · 2026 · v0.2.3</footer></body></html>')
