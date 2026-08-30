@@ -72,7 +72,7 @@ def main():
     if ((h>>1)&3):pos+=2
     rel=topic[len(base)+1:].split('/') if topic.startswith(base+'/') else []
     if len(rel)!=2 or rel[1] not in ('set','command'):continue
-    action,value=payload(b[pos:]);action={'1':'on','true':'on','0':'standby','false':'standby','off':'standby','pause':'playpause','play':'playpause'}.get(action.lower(),action.lower());d=core.find_device(cfg,rel[0]);r=core.FireTV(cfg,d).command(action,value);core.mqtt_event(cfg,'event',{'device':rel[0],'action':action,'result':r},False)
+    action,value=payload(b[pos:]);action={'1':'tvon','true':'tvon','on':'tvon','0':'tvoff','false':'tvoff','off':'tvoff','pause':'playpause','play':'playpause'}.get(action.lower(),action.lower());d=core.find_device(cfg,rel[0]);r=core.FireTV(cfg,d).command(action,value);core.mqtt_event(cfg,'event',{'device':rel[0],'action':action,'result':r},False)
     try:core.publish_status(cfg,core.FireTV(cfg,d).status())
     except Exception:pass
   except Exception as e:
