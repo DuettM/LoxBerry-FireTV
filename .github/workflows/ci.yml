@@ -26,6 +26,12 @@ jobs:
           grep -q 'runuser -u loxberry' daemon/daemon
           test -f dpkg/apt
           grep -qx 'adb' dpkg/apt
+      - name: Python compatibility
+        run: |
+          if grep -RIn --include='*.cgi' --include='*.py' -E '(^|[,[:space:]])import[[:space:]]+cgi([,[:space:]]|$)|from[[:space:]]+cgi[[:space:]]+import' webfrontend bin; then
+            echo 'Deprecated Python cgi module found'
+            exit 1
+          fi
       - name: LoxBerry path compliance
         run: |
           if grep -RIn --exclude-dir=.git --exclude-dir=.github '/opt/loxberry' .; then
