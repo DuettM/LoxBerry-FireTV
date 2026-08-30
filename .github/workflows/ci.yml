@@ -28,7 +28,7 @@ jobs:
           grep -qx 'adb' dpkg/apt
       - name: LoxBerry path compliance
         run: |
-          if grep -RIn --exclude-dir=.git '/opt/loxberry' .; then
+          if grep -RIn --exclude-dir=.git --exclude-dir=.github '/opt/loxberry' .; then
             echo 'Hardcoded /opt/loxberry path found'
             exit 1
           fi
