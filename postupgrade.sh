@@ -7,9 +7,6 @@ PDATA="${LBPDATA:?LBPDATA missing}/$PDIR"
 PLOG="${LBPLOG:?LBPLOG missing}/$PDIR"
 BACKUP="$PDATA/upgrade-config.json"
 mkdir -p "$PCONFIG" "$PLOG"
-
-# LoxBerry may replace the plugin config directory while upgrading.
-# Always restore the user's saved configuration before migrations.
 if [ -f "$BACKUP" ]; then
   cp -p "$BACKUP" "$PCONFIG/config.json" || exit 1
   rm -f "$BACKUP"
@@ -17,13 +14,17 @@ if [ -f "$BACKUP" ]; then
 elif [ ! -f "$PCONFIG/config.json" ]; then
   cp "$PCONFIG/config.default.json" "$PCONFIG/config.json" || exit 1
 fi
-
 python3 - "$PCONFIG/config.json" <<'PY'
 import json,secrets,sys,os,tempfile
 p=sys.argv[1]
 with open(p,encoding='utf-8') as f:c=json.load(f)
 if not c.get('web_secret'):c['web_secret']=secrets.token_hex(32)
-c['config_version']=max(int(c.get('config_version',1)),2)
+m=c.setdefault('mqtt',{})
+m.setdefault('allowed_actions',['tvon','tvoff','home','back','up','down','left','right','ok','menu','playpause','volumeup','volumedown','mute','app'])
+m.setdefault('allow_reboot',False)
+m.setdefault('allow_text',False)
+c.setdefault('security',{}).setdefault('discovery_post_only',True)
+c['config_version']=max(int(c.get('config_version',1)),3)
 fd,tmp=tempfile.mkstemp(prefix='.config-',dir=os.path.dirname(p),text=True)
 with os.fdopen(fd,'w',encoding='utf-8') as f:json.dump(c,f,ensure_ascii=False,indent=2);f.write('\n')
 os.chmod(tmp,0o600);os.replace(tmp,p)
