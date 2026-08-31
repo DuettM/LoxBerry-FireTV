@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse,json,os,signal,socket,struct,sys,time,fcntl,importlib.util,random
 RUN=True
+DEFAULT_ALLOWED={'tvon','tvoff','home','back','up','down','left','right','ok','menu','playpause','volumeup','volumedown','mute','app'}
 def stop(*_):
  global RUN;RUN=False
 signal.signal(signal.SIGTERM,stop);signal.signal(signal.SIGINT,stop)
@@ -45,12 +46,18 @@ def load_core(p):
  spec=importlib.util.spec_from_file_location('firetv_core',p);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);return m
 def payload(raw):
  t=raw.decode('utf-8','replace').strip()
+ if len(t)>1024:raise ValueError('MQTT Payload zu groß')
  try:
   o=json.loads(t)
   if isinstance(o,dict):return str(o.get('action',o.get('cmd',''))),o.get('value',o.get('package'))
  except Exception:pass
  if ':' in t:return tuple(x.strip() for x in t.split(':',1))
  return t,None
+def allowed_action(cfg,action):
+ m=cfg.get('mqtt',{});allowed=set(str(x).lower() for x in m.get('allowed_actions',DEFAULT_ALLOWED))
+ if action=='reboot':return bool(m.get('allow_reboot',False))
+ if action=='text':return bool(m.get('allow_text',False))
+ return action in allowed
 def main():
  ap=argparse.ArgumentParser();ap.add_argument('--config',required=True);ap.add_argument('--core',required=True);a=ap.parse_args();lock=open(os.path.join(os.path.dirname(a.config),'mqtt_listener.lock'),'w')
  try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
@@ -68,11 +75,16 @@ def main():
      if time.time()-last>20:c.ping();last=time.time()
      continue
     if h>>4!=3 or len(b)<2:continue
-    n=struct.unpack('!H',b[:2])[0];topic=b[2:2+n].decode();pos=2+n
+    n=struct.unpack('!H',b[:2])[0];topic=b[2:2+n].decode('utf-8','replace');pos=2+n
     if ((h>>1)&3):pos+=2
     rel=topic[len(base)+1:].split('/') if topic.startswith(base+'/') else []
     if len(rel)!=2 or rel[1] not in ('set','command'):continue
-    action,value=payload(b[pos:]);action={'1':'tvon','true':'tvon','on':'tvon','0':'tvoff','false':'tvoff','off':'tvoff','pause':'playpause','play':'playpause'}.get(action.lower(),action.lower());d=core.find_device(cfg,rel[0]);r=core.FireTV(cfg,d).command(action,value);core.mqtt_event(cfg,'event',{'device':rel[0],'action':action,'result':r},False)
+    action,value=payload(b[pos:]);action={'1':'tvon','true':'tvon','on':'tvon','0':'tvoff','false':'tvoff','off':'tvoff','pause':'playpause','play':'playpause'}.get(action.lower(),action.lower())
+    if not allowed_action(cfg,action):
+     core.mqtt_event(cfg,'security',{'device':rel[0],'blocked_action':action},False);continue
+    if value is not None and len(str(value))>512:
+     core.mqtt_event(cfg,'security',{'device':rel[0],'blocked_action':action,'reason':'value-too-long'},False);continue
+    d=core.find_device(cfg,rel[0]);r=core.FireTV(cfg,d).command(action,value);core.mqtt_event(cfg,'event',{'device':rel[0],'action':action,'result':r},False)
     try:core.publish_status(cfg,core.FireTV(cfg,d).status())
     except Exception:pass
   except Exception as e:
