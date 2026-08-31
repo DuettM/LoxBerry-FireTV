@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.1
+- Dashboard und Hauptseiten im hellen LoxBerry-Stil überarbeitet
+- LoxBerry-Grün, weiße Karten, kompakte Navigation und responsive Darstellung ergänzt
+- Dashboard mit Systemkacheln und übersichtlicheren Gerätekarten neu gestaltet
+- Einstellungen, Gerätesuche und Security Center optisch vereinheitlicht
+- Versionsanzeige im Dashboard wird dynamisch aus `plugin.cfg` gelesen
+- Fest eingetragene Dashboard-Version `0.2.6` entfernt
+
 ## 0.3.0
 - Security Center mit sichtbarer Sicherheitsbewertung hinzugefügt
 - MQTT-Befehle werden über eine konfigurierbare Whitelist begrenzt
