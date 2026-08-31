@@ -1,43 +1,101 @@
 name: Publish FireTV Signed Release
+
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.publish-trigger-firetv-020-v2'
+
 permissions:
   contents: write
-  actions: read
+
 jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Download exact signed package artifact
+
+      - name: Read plugin version
+        id: version
+        shell: bash
+        run: |
+          VERSION="$(awk -F= '/^VERSION=/{print $2; exit}' plugin.cfg)"
+          test -n "$VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Validate sources
+        run: |
+          python3 -m py_compile bin/firetv.py bin/mqtt_listener.py bin/watchdog.py bin/secure_update.py webfrontend/htmlauth/dashboard.cgi webfrontend/htmlauth/config.cgi webfrontend/htmlauth/discover.cgi webfrontend/htmlauth/security.cgi webfrontend/htmlauth/api.cgi webfrontend/htmlauth/debug.cgi
+          perl -c webfrontend/htmlauth/index.cgi
+          bash -n postinstall.sh postupgrade.sh preupgrade.sh daemon/daemon cron/cron.01min uninstall/uninstall.sh
+          python3 -m json.tool config/config.default.json >/dev/null
+          test -f dpkg/apt
+          grep -qx 'adb' dpkg/apt
+          test -s icons/icon.svg
+          grep -q 'LoxBerry::Web::lbheader' webfrontend/htmlauth/index.cgi
+          grep -q "frame-ancestors 'self'" webfrontend/htmlauth/config.cgi
+
+      - name: Build deterministic release ZIP
         env:
-          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          mkdir -p package
-          gh run download 33152668400 -n firetv-0.2.0-package -D package
-          mv package/LoxBerry-FireTV-0.2.0.zip ./LoxBerry-FireTV-0.2.0.zip
-      - name: Verify checksum and Ed25519 signature
-        run: |
-          cp release-signatures/v0.2.0.sha256 LoxBerry-FireTV-0.2.0.zip.sha256
-          cp release-signatures/v0.2.0.sig LoxBerry-FireTV-0.2.0.zip.sig
-          echo "$(cut -d' ' -f1 LoxBerry-FireTV-0.2.0.zip.sha256)  LoxBerry-FireTV-0.2.0.zip" | sha256sum -c -
           python3 - <<'PY'
-          import base64,importlib.util
-          spec=importlib.util.spec_from_file_location('secure_update','bin/secure_update.py');m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
-          blob=open('LoxBerry-FireTV-0.2.0.zip','rb').read();sig=base64.b64decode(open('LoxBerry-FireTV-0.2.0.zip.sig').read().strip(),validate=True)
-          if not m.verify(sig,blob,bytes.fromhex(m.PUB)): raise SystemExit('Ed25519 verification failed')
+          import os,stat,zipfile
+          version=os.environ['VERSION']
+          out=f'LoxBerry-FireTV-{version}.zip'
+          roots=['bin','config','cron','daemon','dpkg','icons','uninstall','webfrontend']
+          singles=['plugin.cfg','postinstall.sh','postupgrade.sh','preupgrade.sh','release.cfg','prerelease.cfg','README.md','CHANGELOG.md','LICENSE','LEGAL.md','SECURITY.md']
+          files=[]
+          for root in roots:
+              if not os.path.isdir(root):
+                  continue
+              for dp,_,names in os.walk(root):
+                  for name in names:
+                      files.append(os.path.join(dp,name))
+          files += [p for p in singles if os.path.isfile(p)]
+          for path in sorted(set(files)):
+              data=open(path,'rb').read()
+              info=zipfile.ZipInfo(path.replace(os.sep,'/'),(2026,1,1,0,0,0))
+              info.compress_type=zipfile.ZIP_DEFLATED
+              mode=0o755 if os.stat(path).st_mode & stat.S_IXUSR else 0o644
+              info.external_attr=(mode & 0xffff)<<16
+              info.create_system=3
+              with zipfile.ZipFile(out,'a',zipfile.ZIP_DEFLATED,compresslevel=9) as z:
+                  z.writestr(info,data,compress_type=zipfile.ZIP_DEFLATED,compresslevel=9)
+          PY
+
+      - name: Verify release checksum and Ed25519 signature
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          test -f "release-signatures/v${VERSION}.sha256"
+          test -f "release-signatures/v${VERSION}.sig"
+          cp "release-signatures/v${VERSION}.sha256" "LoxBerry-FireTV-${VERSION}.zip.sha256"
+          cp "release-signatures/v${VERSION}.sig" "LoxBerry-FireTV-${VERSION}.zip.sig"
+          EXPECTED="$(awk '{print $1; exit}' "LoxBerry-FireTV-${VERSION}.zip.sha256")"
+          echo "${EXPECTED}  LoxBerry-FireTV-${VERSION}.zip" | sha256sum -c -
+          python3 - <<'PY'
+          import base64,importlib.util,os
+          version=os.environ['VERSION']
+          spec=importlib.util.spec_from_file_location('secure_update','bin/secure_update.py')
+          module=importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          blob=open(f'LoxBerry-FireTV-{version}.zip','rb').read()
+          sig=base64.b64decode(open(f'LoxBerry-FireTV-{version}.zip.sig').read().strip(),validate=True)
+          if not module.verify(sig,blob,bytes.fromhex(module.PUB)):
+              raise SystemExit('Ed25519 verification failed')
           print('Ed25519 signature valid')
           PY
+
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          gh release create v0.2.0 \
-            LoxBerry-FireTV-0.2.0.zip \
-            LoxBerry-FireTV-0.2.0.zip.sha256 \
-            LoxBerry-FireTV-0.2.0.zip.sig \
-            --title 'Fire TV Control v0.2.0' \
-            --notes 'Security/Compliance release: dynamic LoxBerry paths, CSRF + POST for control actions, privilege drop to loxberry, hardened config/log permissions, central LoxBerry MQTT and SHA-256 + Ed25519 signed update chain.'
+          if gh release view "v${VERSION}" >/dev/null 2>&1; then
+            echo "Release v${VERSION} already exists"
+            exit 1
+          fi
+          gh release create "v${VERSION}" \
+            "LoxBerry-FireTV-${VERSION}.zip" \
+            "LoxBerry-FireTV-${VERSION}.zip.sha256" \
+            "LoxBerry-FireTV-${VERSION}.zip.sig" \
+            --title "Fire TV Control v${VERSION}" \
+            --notes-file CHANGELOG.md
