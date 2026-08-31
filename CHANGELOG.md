@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.5
+- Einstieg auf nativen LoxBerry-Webrahmen mit `LoxBerry::Web::lbheader()` und `lbfooter()` umgestellt
+- Echte LoxBerry-Navigationssymbole erscheinen wieder im oberen Seitenbereich wie bei nativen LoxBerry-Plugins
+- Eigenen nachgebauten Zurück-Button aus dem Fire-TV-Menü entfernt
+- Bestehendes Fire-TV-Dashboard nach `dashboard.cgi` ausgelagert und in den nativen LoxBerry-Rahmen eingebettet
+- Einstellungen, Gerätesuche, Security Center und Debug für Same-Origin-Einbettung freigegeben
+- Frame-Schutz von `DENY`/`frame-ancestors 'none'` auf `SAMEORIGIN`/`frame-ancestors 'self'` korrigiert
+- Installer und Upgrader um `dashboard.cgi` ergänzt
+- CI- und Paket-Workflow an Perl-`index.cgi` plus Python-`dashboard.cgi` angepasst
+
+## 0.3.4
+- Zurück-zum-LoxBerry-Eintrag im selbstgebauten Menü zunächst auf kompaktes Home-Icon reduziert
+- Mobile Navigation ebenfalls auf Icon-Variante umgestellt
+
 ## 0.3.3
 - Feste linke LoxBerry-Navigation auf Dashboard, Einstellungen, Gerätesuche, Security Center und Debug vereinheitlicht
 - „Zurück zu LoxBerry“ ist auf Desktop und Mobilansicht überall erreichbar
