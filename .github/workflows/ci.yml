@@ -11,7 +11,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Python syntax
         run: |
-          python3 -m py_compile bin/firetv.py bin/mqtt_listener.py bin/watchdog.py webfrontend/htmlauth/index.cgi webfrontend/htmlauth/config.cgi webfrontend/htmlauth/discover.cgi webfrontend/htmlauth/security.cgi webfrontend/htmlauth/api.cgi webfrontend/htmlauth/debug.cgi
+          python3 -m py_compile bin/firetv.py bin/mqtt_listener.py bin/watchdog.py webfrontend/htmlauth/dashboard.cgi webfrontend/htmlauth/config.cgi webfrontend/htmlauth/discover.cgi webfrontend/htmlauth/security.cgi webfrontend/htmlauth/api.cgi webfrontend/htmlauth/debug.cgi
       - name: Shell syntax
         run: |
           bash -n postinstall.sh preupgrade.sh postupgrade.sh daemon/daemon cron/cron.01min uninstall/uninstall.sh
@@ -26,11 +26,15 @@ jobs:
           grep -q 'runuser -u loxberry' daemon/daemon
           test -f dpkg/apt
           grep -qx 'adb' dpkg/apt
+          test -f webfrontend/htmlauth/dashboard.cgi
+          grep -q 'LoxBerry::Web::lbheader' webfrontend/htmlauth/index.cgi
+          grep -q 'LoxBerry::Web::lbfooter' webfrontend/htmlauth/index.cgi
           test -f webfrontend/htmlauth/discover.cgi
           test -f webfrontend/htmlauth/security.cgi
           grep -q 'allow_reboot' config/config.default.json
           grep -q 'allowed_actions' bin/mqtt_listener.py
-          grep -q 'Content-Security-Policy' webfrontend/htmlauth/security.cgi
+          grep -q "frame-ancestors 'self'" webfrontend/htmlauth/security.cgi
+          grep -q 'X-Frame-Options: SAMEORIGIN' webfrontend/htmlauth/debug.cgi
           grep -q "REQUEST_METHOD.*POST" webfrontend/htmlauth/discover.cgi
       - name: Python compatibility
         run: |
