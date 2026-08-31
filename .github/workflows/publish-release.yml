@@ -1,7 +1,10 @@
-name: Publish FireTV Signed Release
+name: Publish FireTV Release
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.publish-trigger-firetv-current'
 
 permissions:
   contents: write
@@ -50,28 +53,29 @@ jobs:
                   for name in names:
                       files.append(os.path.join(dp,name))
           files += [p for p in singles if os.path.isfile(p)]
-          for path in sorted(set(files)):
-              data=open(path,'rb').read()
-              info=zipfile.ZipInfo(path.replace(os.sep,'/'),(2026,1,1,0,0,0))
-              info.compress_type=zipfile.ZIP_DEFLATED
-              mode=0o755 if os.stat(path).st_mode & stat.S_IXUSR else 0o644
-              info.external_attr=(mode & 0xffff)<<16
-              info.create_system=3
-              with zipfile.ZipFile(out,'a',zipfile.ZIP_DEFLATED,compresslevel=9) as z:
+          with zipfile.ZipFile(out,'w',zipfile.ZIP_DEFLATED,compresslevel=9) as z:
+              for path in sorted(set(files)):
+                  data=open(path,'rb').read()
+                  info=zipfile.ZipInfo(path.replace(os.sep,'/'),(2026,1,1,0,0,0))
+                  info.compress_type=zipfile.ZIP_DEFLATED
+                  mode=0o755 if os.stat(path).st_mode & stat.S_IXUSR else 0o644
+                  info.external_attr=(mode & 0xffff)<<16
+                  info.create_system=3
                   z.writestr(info,data,compress_type=zipfile.ZIP_DEFLATED,compresslevel=9)
           PY
+          sha256sum "LoxBerry-FireTV-${{ steps.version.outputs.version }}.zip" > "LoxBerry-FireTV-${{ steps.version.outputs.version }}.zip.sha256"
 
-      - name: Verify release checksum and Ed25519 signature
+      - name: Verify optional Ed25519 signature
+        id: signature
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          test -f "release-signatures/v${VERSION}.sha256"
-          test -f "release-signatures/v${VERSION}.sig"
-          cp "release-signatures/v${VERSION}.sha256" "LoxBerry-FireTV-${VERSION}.zip.sha256"
-          cp "release-signatures/v${VERSION}.sig" "LoxBerry-FireTV-${VERSION}.zip.sig"
-          EXPECTED="$(awk '{print $1; exit}' "LoxBerry-FireTV-${VERSION}.zip.sha256")"
-          echo "${EXPECTED}  LoxBerry-FireTV-${VERSION}.zip" | sha256sum -c -
-          python3 - <<'PY'
+          if [ -f "release-signatures/v${VERSION}.sig" ] && [ -f "release-signatures/v${VERSION}.sha256" ]; then
+            cp "release-signatures/v${VERSION}.sig" "LoxBerry-FireTV-${VERSION}.zip.sig"
+            EXPECTED="$(awk '{print $1; exit}' "release-signatures/v${VERSION}.sha256")"
+            ACTUAL="$(sha256sum "LoxBerry-FireTV-${VERSION}.zip" | awk '{print $1}')"
+            test "$EXPECTED" = "$ACTUAL"
+            python3 - <<'PY'
           import base64,importlib.util,os
           version=os.environ['VERSION']
           spec=importlib.util.spec_from_file_location('secure_update','bin/secure_update.py')
@@ -83,19 +87,31 @@ jobs:
               raise SystemExit('Ed25519 verification failed')
           print('Ed25519 signature valid')
           PY
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No matching Ed25519 signature committed for v${VERSION}; publishing ZIP + SHA256 only."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
+          SIGNED: ${{ steps.signature.outputs.signed }}
         run: |
           if gh release view "v${VERSION}" >/dev/null 2>&1; then
             echo "Release v${VERSION} already exists"
             exit 1
           fi
-          gh release create "v${VERSION}" \
-            "LoxBerry-FireTV-${VERSION}.zip" \
-            "LoxBerry-FireTV-${VERSION}.zip.sha256" \
-            "LoxBerry-FireTV-${VERSION}.zip.sig" \
-            --title "Fire TV Control v${VERSION}" \
-            --notes-file CHANGELOG.md
+          ASSETS=("LoxBerry-FireTV-${VERSION}.zip" "LoxBerry-FireTV-${VERSION}.zip.sha256")
+          NOTE=""
+          if [ "$SIGNED" = "true" ]; then
+            ASSETS+=("LoxBerry-FireTV-${VERSION}.zip.sig")
+          else
+            NOTE=$'\n\n> Hinweis: Für diesen Release ist noch keine Ed25519-Signatur hinterlegt. Das sichere LoxBerry-Autoupdate bleibt deshalb bis zur Signierung auf dem letzten signierten Release.'
+          fi
+          {
+            awk 'BEGIN{s=0} /^## 0\.3\.5/{s=1} /^## / && s && $0 !~ /^## 0\.3\.5/{exit} s{print}' CHANGELOG.md
+            printf '%s\n' "$NOTE"
+          } > release-notes.md
+          gh release create "v${VERSION}" "${ASSETS[@]}" --title "Fire TV Control v${VERSION}" --notes-file release-notes.md
