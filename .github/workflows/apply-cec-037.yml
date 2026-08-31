@@ -1,0 +1,32 @@
+name: Apply FireTV CEC 0.3.7
+
+on:
+  push:
+    paths:
+      - '.cec-trigger-037'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply patch
+        run: python3 tools/patch_cec_037.py
+      - name: Validate
+        run: |
+          python3 -m py_compile bin/firetv.py webfrontend/htmlauth/config.cgi
+          python3 -m json.tool config/config.default.json >/dev/null
+          bash -n postinstall.sh preupgrade.sh postupgrade.sh daemon/daemon cron/cron.01min uninstall/uninstall.sh
+          grep -q '^VERSION=0.3.7$' plugin.cfg
+          grep -q 'cec_on_method' bin/firetv.py
+          grep -q 'save_device_cec' webfrontend/htmlauth/config.cgi
+      - name: Commit changes
+        run: |
+          git config user.name 'DuettM'
+          git config user.email 'duett86@web.de'
+          git add plugin.cfg bin/firetv.py webfrontend/htmlauth/config.cgi CHANGELOG.md README.md
+          git commit -m 'FireTV v0.3.7 configurable CEC control'
+          git push
