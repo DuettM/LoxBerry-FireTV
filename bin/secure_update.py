@@ -38,7 +38,7 @@ def verify(sig,msg,pub):
 def fetch(url,limit):
  u=urllib.parse.urlparse(url)
  if u.scheme!='https' or u.hostname not in ALLOWED_HOSTS:raise RuntimeError('Unsichere Update-URL')
- req=urllib.request.Request(url,headers={'User-Agent':'LoxBerry-FireTV-secure-updater/0.2.0'})
+ req=urllib.request.Request(url,headers={'User-Agent':'LoxBerry-FireTV-secure-updater/0.3.5'})
  with urllib.request.urlopen(req,timeout=20) as r:data=r.read(limit+1)
  if len(data)>limit:raise RuntimeError('Update-Datei zu groß')
  return data
