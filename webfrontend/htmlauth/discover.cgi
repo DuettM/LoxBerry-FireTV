@@ -4,15 +4,13 @@ from concurrent.futures import ThreadPoolExecutor,as_completed
 from urllib.parse import parse_qs
 
 def root():
- p=os.path.abspath(os.environ.get('SCRIPT_FILENAME') or __file__)
- marker=os.sep+'webfrontend'+os.sep
+ p=os.path.abspath(os.environ.get('SCRIPT_FILENAME') or __file__);marker=os.sep+'webfrontend'+os.sep
  if marker in p:return p.split(marker,1)[0]
  r=os.environ.get('LBHOMEDIR') or os.environ.get('LBHOME')
  if r:return r
  raise RuntimeError('LoxBerry Basisverzeichnis konnte nicht ermittelt werden')
 def folder():
- p=os.path.abspath(os.environ.get('SCRIPT_FILENAME') or __file__);parts=p.split(os.sep)
- return parts[parts.index('plugins')+1] if 'plugins' in parts else 'firetv'
+ p=os.path.abspath(os.environ.get('SCRIPT_FILENAME') or __file__);parts=p.split(os.sep);return parts[parts.index('plugins')+1] if 'plugins' in parts else 'firetv'
 def post_data():
  if os.environ.get('REQUEST_METHOD','GET').upper()!='POST':return {}
  try:n=min(max(int(os.environ.get('CONTENT_LENGTH','0') or 0),0),65536)
@@ -27,6 +25,14 @@ def same_site():
   v=os.environ.get(k,'').lower();m=re.match(r'^https?://([^/]+)',v) if v and host else None
   if m and m.group(1)!=host:return False
  return True
+def version():
+ try:
+  base=os.path.abspath(os.environ.get('SCRIPT_FILENAME') or __file__).split(os.sep+'webfrontend'+os.sep,1)[0]
+  with open(os.path.join(base,'plugin.cfg'),encoding='utf-8') as f:
+   for line in f:
+    if line.startswith('VERSION='):return line.split('=',1)[1].strip()
+ except Exception:pass
+ return '0.3.1'
 def local_net():
  try:
   out=subprocess.check_output(['ip','-o','-4','addr','show','scope','global'],text=True,timeout=3)
@@ -68,17 +74,20 @@ if scan and net:
    if ip:found.append(ip)
  for ip in sorted(found,key=lambda x:tuple(int(p) for p in x.split('.'))):results.append(adb_info(ip))
 print("Content-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nContent-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'\r\nX-Frame-Options: DENY\r\nPermissions-Policy: camera=(), microphone=(), geolocation=()\r\n\r\n",end='')
-print('''<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fire TV Suche</title><style>body{font-family:system-ui;background:#0f141a;color:#fff;margin:0}.wrap{max-width:900px;margin:auto;padding:24px}.card{background:#18212b;border:1px solid #2a3948;border-radius:16px;padding:18px;margin:12px 0}a,button{background:#ff9900;color:#111;border:0;border-radius:10px;padding:10px 14px;text-decoration:none;font-weight:700}small{color:#9fb0c0}.ok{color:#71e39b}.warn{color:#ffbd66}.bad{color:#ff8088}.row{display:flex;justify-content:space-between;gap:16px;align-items:center;flex-wrap:wrap}input{padding:9px;border-radius:8px;border:1px solid #3a4a59}</style></head><body><div class="wrap"><p><a href="config.cgi">← Konfiguration</a> <a href="security.cgi">🔒 Security Center</a></p><h1>Fire TVs suchen</h1>''')
-if err:print('<div class="card bad">%s</div>'%html.escape(err))
-if not net:print('<div class="card">Lokales IPv4-Netz konnte nicht automatisch ermittelt werden.</div>')
+print('''<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fire TV Suche</title><style>:root{--green:#73b72b;--text:#29323a;--muted:#71808d;--line:#dde4e8;--bg:#f6f8f9;--red:#d94343;--orange:#ee9c24}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Arial,Helvetica,sans-serif}.root{max-width:1180px;margin:auto;padding:12px}.head{display:flex;align-items:center;gap:14px;background:#fff;border:1px solid var(--line);border-radius:9px;padding:13px 16px;margin-bottom:12px}.logo{width:54px;height:54px;border-radius:8px;background:linear-gradient(145deg,#86ca42,#5ba21d);display:grid;place-items:center;color:#fff;font-size:28px}.title{flex:1}.title h1{margin:0;color:#257c31;font-size:23px}.title p{margin:3px 0 0;color:#56616b}.ver{font-size:12px;color:#687680}.nav{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px}.nav a{background:#fff;border:1px solid var(--line);border-radius:6px;padding:9px 11px;text-decoration:none;color:#34404a;font-weight:600}.nav a.active{background:#edf7e5;color:#2d7d29;border-color:#cbe1c1}.card{background:#fff;border:1px solid var(--line);border-radius:9px;margin-bottom:12px}.card h2{font-size:17px;margin:0;padding:13px 15px;border-bottom:1px solid #edf0f2}.body{padding:15px}.network{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center}.btn{border:1px solid #cdd6dc;background:#fff;border-radius:6px;padding:9px 12px;cursor:pointer;font-weight:600}.btn-green{background:var(--green);border-color:var(--green);color:#fff}.result{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid #edf0f2}.result:last-child{border-bottom:0}.result h3{margin:0 0 4px}.status{display:inline-block;padding:3px 8px;border-radius:5px;font-size:12px;font-weight:bold}.ok{background:#eff8eb;border:1px solid #cbe1c1;color:#23802a}.warn{background:#fff7e8;border:1px solid #f0d39c;color:#a66b0c}.bad{background:#fff0f0;border:1px solid #efc0c0;color:#a52828}.muted{color:var(--muted);font-size:12px}.add{display:flex;gap:7px;align-items:center;flex-wrap:wrap}.add input{height:38px;border:1px solid #cbd4da;border-radius:6px;padding:0 10px}.notice{padding:10px 12px;border-radius:6px;margin-bottom:12px}.footer{text-align:center;color:#66727b;padding:16px;font-size:13px}@media(max-width:650px){.head{flex-wrap:wrap}.network,.result{grid-template-columns:1fr}.ver{margin-left:68px}}</style></head><body><div class="root"><div class="head"><div class="logo">⌕</div><div class="title"><h1>Fire TVs suchen</h1><p>ADB-Geräte im lokalen Netzwerk automatisch finden</p></div><div class="ver">Version __VER__</div></div><div class="nav"><a href="index.cgi">⌂ Übersicht</a><a href="config.cgi">⚙ Einstellungen</a><a class="active" href="discover.cgi">⌕ Fire TVs suchen</a><a href="security.cgi">🔒 Security Center</a><a href="debug.cgi">▤ Debug</a></div>'''.replace('__VER__',html.escape(version())))
+if err:print('<div class="notice bad">%s</div>'%html.escape(err))
+if not net:print('<section class="card"><div class="body"><b>Lokales IPv4-Netz konnte nicht automatisch ermittelt werden.</b></div></section>')
 else:
- print('<div class="card"><b>Netz:</b> %s<br><small>Gesucht wird nach ADB auf TCP-Port 5555. Der Scan ist auf maximal 254 Adressen begrenzt.</small><form method="post"><input type="hidden" name="csrf" value="%s"><input type="hidden" name="action" value="scan"><p><button>🔎 Suche starten</button></p></form></div>'%(html.escape(str(net)),html.escape(csrf(c),quote=True)))
-if scan and net and not results:print('<div class="card">Kein Gerät mit offenem ADB-Port 5555 gefunden. Prüfe, ob ADB-Debugging am Fire TV aktiviert ist.</div>')
-for r in results:
- already=r['ip'] in known;cls='ok' if r['authorized'] else 'warn'
- print('<div class="card"><div class="row"><div><h2>%s</h2><b>%s:5555</b><br><span class="%s">%s</span></div>'%(html.escape(r['model']),html.escape(r['ip']),cls,html.escape(r['state'])))
- if already:print('<b class="ok">Bereits hinzugefügt</b></div></div>')
- else:
-  name=html.escape(r['model'],quote=True);ip=html.escape(r['ip'],quote=True);token=html.escape(csrf(c),quote=True)
-  print('<form method="post" action="config.cgi"><input type="hidden" name="csrf" value="%s"><input type="hidden" name="form_action" value="add_device"><input type="hidden" name="ip" value="%s"><input type="hidden" name="port" value="5555"><div class="row"><input name="name" maxlength="80" value="%s"><button>Hinzufügen</button></div></form></div>'%(token,ip,name))
-print('<footer><small>Fire TV Control · Marco Düthorn · 2026 · v0.3.0</small></footer></div></body></html>')
+ print('<section class="card"><h2>Netzwerksuche</h2><div class="body"><div class="network"><div><b>Erkanntes Netz: %s</b><br><span class="muted">Es wird ausschließlich nach ADB auf TCP-Port 5555 gesucht. Maximal 254 Hosts.</span></div><form method="post"><input type="hidden" name="csrf" value="%s"><input type="hidden" name="action" value="scan"><button class="btn btn-green">⌕ Suche starten</button></form></div></div></section>'%(html.escape(str(net)),html.escape(csrf(c),quote=True)))
+if scan and net and not results:print('<section class="card"><div class="body"><b>Kein Fire TV gefunden.</b><p class="muted">Prüfe ADB-Debugging und ob Port 5555 vom LoxBerry erreichbar ist.</p></div></section>')
+if results:
+ print('<section class="card"><h2>Gefundene Geräte</h2><div class="body">')
+ for r in results:
+  already=r['ip'] in known;cls='ok' if r['authorized'] else 'warn'
+  print('<div class="result"><div><h3>%s</h3><b>%s:5555</b><br><span class="status %s">%s</span></div>'%(html.escape(r['model']),html.escape(r['ip']),cls,html.escape(r['state'])))
+  if already:print('<span class="status ok">Bereits hinzugefügt</span></div>')
+  else:
+   name=html.escape(r['model'],quote=True);ip=html.escape(r['ip'],quote=True);tok=html.escape(csrf(c),quote=True)
+   print('<form class="add" method="post" action="config.cgi"><input type="hidden" name="csrf" value="%s"><input type="hidden" name="form_action" value="add_device"><input type="hidden" name="ip" value="%s"><input type="hidden" name="port" value="5555"><input name="name" maxlength="80" value="%s"><button class="btn btn-green">Hinzufügen</button></form></div>'%(tok,ip,name))
+ print('</div></section>')
+print('<div class="footer">Fire TV Control · Marco Düthorn · 2026 · v%s</div></div></body></html>'%html.escape(version()))
