@@ -21,8 +21,7 @@ def form_data():
    for k,v in parse_qs(raw.decode('utf-8','replace'),keep_blank_values=True).items():data[k]=v[-1] if v else ''
  return data
 FOLDER=folder();CFG=os.path.join(root(),'config','plugins',FOLDER,'config.json')
-def load():
- with open(CFG,encoding='utf-8') as f:return json.load(f)
+def load():return json.load(open(CFG,encoding='utf-8'))
 def save(c):
  fd,tmp=tempfile.mkstemp(prefix='.config-',dir=os.path.dirname(CFG),text=True)
  with os.fdopen(fd,'w',encoding='utf-8') as f:json.dump(c,f,ensure_ascii=False,indent=2);f.write('\n')
@@ -61,23 +60,23 @@ if os.environ.get('REQUEST_METHOD','GET').upper()=='POST':
    if not name or len(name)>80 or re.search(r'[\r\n\x00]',name):raise ValueError('Gerätename ungültig.')
    if port<1 or port>65535:raise ValueError('Port ungültig.')
    if any(str(d.get('ip',''))==ip for d in c.get('devices',[])):raise ValueError('Dieses Gerät ist bereits vorhanden.')
-   base=re.sub(r'[^a-zA-Z0-9_-]+','-',name.lower()).strip('-') or ip.replace('.','-');ident=base;n=2
-   ids={str(d.get('id','')) for d in c.get('devices',[])}
+   base=re.sub(r'[^a-zA-Z0-9_-]+','-',name.lower()).strip('-') or ip.replace('.','-');ident=base;n=2;ids={str(d.get('id','')) for d in c.get('devices',[])}
    while ident in ids:ident=f'{base}-{n}';n+=1
    c.setdefault('devices',[]).append({'id':ident,'name':name,'ip':ip,'port':port,'enabled':True});save(c);notice='Gerät hinzugefügt. Falls am Fire TV eine ADB-Abfrage erscheint, bitte bestätigen.'
   elif act=='delete':
    ident=f.get('id','') or ''
+   if len(ident)>128 or re.search(r'[\r\n\x00]',ident):raise ValueError('Geräte-ID ungültig.')
    c['devices']=[d for d in c.get('devices',[]) if str(d.get('id',''))!=ident];save(c);notice='Gerät gelöscht.'
   else:raise ValueError('Unbekannte Aktion.')
  except Exception as e:error=str(e)
-print('Content-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\n\r\n')
-print('''<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fire TV Konfiguration</title><style>body{font-family:system-ui;background:#0f141a;color:#fff;margin:0}.wrap{max-width:950px;margin:auto;padding:24px}.card{background:#18212b;border:1px solid #2a3948;border-radius:16px;padding:18px;margin:14px 0}a,button{background:#ff9900;color:#111;border:0;border-radius:9px;padding:9px 13px;text-decoration:none;font-weight:700}input{padding:9px;border-radius:8px;border:1px solid #3a4a59;margin:4px}.muted{color:#9fb0c0}.danger{background:#5d2529;color:#fff}</style></head><body><div class="wrap"><h1>Fire TV Control – Konfiguration</h1><p><a href="index.cgi">Dashboard</a> <a href="discover.cgi">🔎 Fire TVs suchen</a> <a href="debug.cgi">Debug</a></p>''')
+print("Content-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nContent-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'\r\nX-Frame-Options: DENY\r\nPermissions-Policy: camera=(), microphone=(), geolocation=()\r\n\r\n",end='')
+print('''<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fire TV Konfiguration</title><style>body{font-family:system-ui;background:#0f141a;color:#fff;margin:0}.wrap{max-width:950px;margin:auto;padding:24px}.card{background:#18212b;border:1px solid #2a3948;border-radius:16px;padding:18px;margin:14px 0}a,button{background:#ff9900;color:#111;border:0;border-radius:9px;padding:9px 13px;text-decoration:none;font-weight:700}input{padding:9px;border-radius:8px;border:1px solid #3a4a59;margin:4px}.muted{color:#9fb0c0}.danger{background:#5d2529;color:#fff}</style></head><body><div class="wrap"><h1>Fire TV Control – Konfiguration</h1><p><a href="index.cgi">Dashboard</a> <a href="discover.cgi">🔎 Fire TVs suchen</a> <a href="security.cgi">🔒 Security Center</a> <a href="debug.cgi">Debug</a></p>''')
 if notice:print('<div class="card"><b>%s</b></div>'%html.escape(notice))
 if error:print('<div class="card"><b>%s</b></div>'%html.escape(error))
 csrf_h='<input type="hidden" name="csrf" value="%s">'%html.escape(token,quote=True)
-print('<div class="card"><h2>Allgemein</h2><form method="post">%s<input type="hidden" name="form_action" value="save_general"><label>Abfrageintervall <input type="number" min="10" max="3600" name="poll_interval" value="%s"></label><br><label>MQTT Basistopic <input name="base_topic" maxlength="128" value="%s"></label><br><label><input type="checkbox" name="mqtt_enabled" %s> MQTT aktiv</label><br><label><input type="checkbox" name="mqtt_listen" %s> Befehle empfangen</label><br><label><input type="checkbox" name="watchdog_enabled" %s> Watchdog aktiv</label><br><button>Speichern</button></form></div>'%(csrf_h,c.get('poll_interval',30),html.escape(c.get('mqtt',{}).get('base_topic','firetv'),quote=True),'checked' if c.get('mqtt',{}).get('enabled',True) else '','checked' if c.get('mqtt',{}).get('listen_enabled',True) else '','checked' if c.get('watchdog',{}).get('enabled',True) else ''))
+print('<div class="card"><h2>Allgemein</h2><form method="post">%s<input type="hidden" name="form_action" value="save_general"><label>Abfrageintervall <input type="number" min="10" max="3600" name="poll_interval" value="%s"></label><br><label>MQTT Basistopic <input name="base_topic" maxlength="128" value="%s"></label><br><label><input type="checkbox" name="mqtt_enabled" %s> MQTT aktiv</label><br><label><input type="checkbox" name="mqtt_listen" %s> Befehle empfangen</label><br><label><input type="checkbox" name="watchdog_enabled" %s> Watchdog aktiv</label><br><button>Speichern</button></form><p class="muted">MQTT-Befehlsrechte werden im Security Center festgelegt.</p></div>'%(csrf_h,c.get('poll_interval',30),html.escape(c.get('mqtt',{}).get('base_topic','firetv'),quote=True),'checked' if c.get('mqtt',{}).get('enabled',True) else '','checked' if c.get('mqtt',{}).get('listen_enabled',True) else '','checked' if c.get('watchdog',{}).get('enabled',True) else ''))
 print('<div class="card"><h2>Fire TV hinzufügen</h2><p class="muted">Oder komfortabel über „Fire TVs suchen“ oben.</p><form method="post">%s<input type="hidden" name="form_action" value="add_device"><input name="name" maxlength="80" placeholder="Wohnzimmer" required><input name="ip" maxlength="253" placeholder="192.168.1.50" required><input name="port" type="number" min="1" max="65535" value="5555"><button>Hinzufügen</button></form></div><div class="card"><h2>Geräte</h2>'%csrf_h)
 for d in c.get('devices',[]):
  ident=html.escape(str(d.get('id','')),quote=True)
  print('<p><b>%s</b> · %s:%s · <code>%s</code></p><form method="post">%s<input type="hidden" name="form_action" value="delete"><input type="hidden" name="id" value="%s"><button class="danger">Löschen</button></form>'%(html.escape(str(d.get('name',''))),html.escape(str(d.get('ip',''))),d.get('port',5555),html.escape(str(d.get('id',''))),csrf_h,ident))
-print('</div><footer class="muted">Fire TV Control · Marco Düthorn · 2026 · v0.2.8</footer></div></body></html>')
+print('</div><footer class="muted">Fire TV Control · Marco Düthorn · 2026 · v0.3.0</footer></div></body></html>')
