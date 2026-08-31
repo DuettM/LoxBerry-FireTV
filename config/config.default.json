@@ -1,5 +1,5 @@
 {
-  "config_version": 2,
+  "config_version": 3,
   "web_secret": "",
   "poll_interval": 30,
   "adb_timeout": 8,
@@ -7,7 +7,13 @@
     "enabled": true,
     "listen_enabled": true,
     "base_topic": "firetv",
-    "retain_state": true
+    "retain_state": true,
+    "allowed_actions": ["tvon", "tvoff", "home", "back", "up", "down", "left", "right", "ok", "menu", "playpause", "volumeup", "volumedown", "mute", "app"],
+    "allow_reboot": false,
+    "allow_text": false
+  },
+  "security": {
+    "discovery_post_only": true
   },
   "watchdog": {
     "enabled": true,
