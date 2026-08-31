@@ -5,6 +5,7 @@ PDIR="${3:-}"
 [ -n "$PDIR" ] || { echo "<FAIL> Plugin folder argument missing."; exit 1; }
 PCONFIG="${LBPCONFIG:?LBPCONFIG missing}/$PDIR"
 PBIN="${LBPBIN:?LBPBIN missing}/$PDIR"
+PHTMLAUTH="${LBPHTMLAUTH:?LBPHTMLAUTH missing}/$PDIR"
 PDATA="${LBPDATA:?LBPDATA missing}/$PDIR"
 PLOG="${LBPLOG:?LBPLOG missing}/$PDIR"
 BACKUP="/tmp/loxberry-firetv-${PDIR}-config-backup.json"
@@ -21,7 +22,6 @@ if [ -f "$BACKUP" ]; then
   rm -f "$BACKUP"
 fi
 
-# Only create defaults when no user configuration exists at all.
 if [ ! -f "$PCONFIG/config.json" ]; then
   cp "$PCONFIG/config.default.json" "$PCONFIG/config.json" || exit 1
   echo "<WARNING> No previous Fire TV configuration found; created defaults."
@@ -34,10 +34,8 @@ with open(p,encoding='utf-8') as f:c=json.load(f)
 with open(dp,encoding='utf-8') as f:d=json.load(f)
 def merge(dst,defs):
     for k,v in defs.items():
-        if k not in dst:
-            dst[k]=copy.deepcopy(v)
-        elif isinstance(v,dict) and isinstance(dst.get(k),dict):
-            merge(dst[k],v)
+        if k not in dst: dst[k]=copy.deepcopy(v)
+        elif isinstance(v,dict) and isinstance(dst.get(k),dict): merge(dst[k],v)
 merge(c,d)
 if not c.get('web_secret'): c['web_secret']=secrets.token_hex(32)
 m=c.setdefault('mqtt',{})
@@ -54,6 +52,7 @@ PY
 
 chmod 700 "$PCONFIG" "$PLOG" 2>/dev/null || true
 chmod 700 "$PBIN/firetv.py" "$PBIN/mqtt_listener.py" "$PBIN/watchdog.py" "$PBIN/secure_update.py" 2>/dev/null || true
+chmod 755 "$PHTMLAUTH/index.cgi" "$PHTMLAUTH/dashboard.cgi" "$PHTMLAUTH/config.cgi" "$PHTMLAUTH/discover.cgi" "$PHTMLAUTH/security.cgi" "$PHTMLAUTH/debug.cgi" "$PHTMLAUTH/api.cgi" 2>/dev/null || true
 chmod 600 "$PBIN/update_public_key.hex" "$PCONFIG/config.json" 2>/dev/null || true
 touch "$PLOG/firetv.log" "$PLOG/mqtt-daemon.log" "$PLOG/watchdog.log" 2>/dev/null || true
 chmod 600 "$PLOG/"*.log 2>/dev/null || true
