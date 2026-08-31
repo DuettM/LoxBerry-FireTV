@@ -23,6 +23,19 @@ def form_data():
    for k,v in body.items():data[k]=v[-1] if v else ''
  return data
 FOLDER=folder();CFG=os.path.join(root(),'config','plugins',FOLDER,'config.json');BIN=os.path.join(root(),'bin','plugins',FOLDER)
+def plugin_version():
+ try:
+  with open(os.path.join(root(),'plugins',FOLDER,'plugin.cfg'),encoding='utf-8') as f:
+   for line in f:
+    if line.startswith('VERSION='):return line.split('=',1)[1].strip()
+ except Exception:pass
+ try:
+  with open(os.path.join(root(),'plugin.cfg'),encoding='utf-8') as f:
+   for line in f:
+    if line.startswith('VERSION='):return line.split('=',1)[1].strip()
+ except Exception:pass
+ return 'unbekannt'
+VERSION=plugin_version()
 def csrf(c):return hmac.new(str(c.get('web_secret','')).encode(),(os.environ.get('HTTP_COOKIE','')+'|'+os.environ.get('HTTP_USER_AGENT','')).encode(),hashlib.sha256).hexdigest()
 def same_site():
  if os.environ.get('HTTP_SEC_FETCH_SITE','').lower()=='cross-site':return False
@@ -66,7 +79,7 @@ print('''<!doctype html><html><head><meta name="viewport" content="width=device-
 button{font:inherit;border:1px solid #3a4a59;background:#202c38;color:#f7f9fb;border-radius:11px;padding:10px 12px;cursor:pointer;transition:.15s ease}button:hover{transform:translateY(-1px);border-color:#5b6f82;background:#263646}button:active{transform:translateY(0)}button.primary{background:var(--accent);border-color:var(--accent);color:#181818;font-weight:800}.quick{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.quick button{min-height:44px}.power{display:grid;grid-template-columns:1fr 1fr;gap:8px}.power .wake{background:rgba(53,195,111,.13);border-color:rgba(53,195,111,.35);color:#86e8aa}.power .sleep{background:rgba(255,91,100,.11);border-color:rgba(255,91,100,.3);color:#ffadb3}
 .app-launch{display:flex;gap:8px}.app-launch input{flex:1;background:#10171f;border:1px solid #31404e;color:#fff;border-radius:11px;padding:11px 12px;min-width:0}.app-launch input:focus{outline:2px solid rgba(255,153,0,.3);border-color:var(--accent)}.empty{padding:32px;text-align:center}.empty h3{margin-top:0}.empty p{color:var(--muted)}footer{text-align:center;color:#718395;font-size:12px;margin-top:30px;padding:10px}
 @media(max-width:720px){.topbar-inner{align-items:flex-start}.brand small{display:none}.nav a{padding:8px 9px;font-size:12px}.hero{align-items:flex-start;flex-direction:column}.grid{grid-template-columns:1fr}.card{padding:16px}.remote-wrap{grid-template-columns:1fr}.remote{margin:auto}.status-grid{grid-template-columns:1fr 1fr}.status-grid .status-box:last-child{grid-column:1/-1}.quick{grid-template-columns:1fr 1fr}.app-launch{flex-direction:column}}
-</style></head><body><header class="topbar"><div class="topbar-inner"><div class="brand"><div class="logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#17202a" d="M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-6v2h3v1H7v-1h3v-2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zm6 3v8l6-4z"/></svg></div><div><h1>Fire TV Control</h1><small>LoxBerry · Geräte & Steuerung</small></div></div><nav class="nav"><a href="config.cgi">⚙ Konfiguration</a><a href="debug.cgi">⌘ Debug</a></nav></div></header><main class="wrap"><div class="hero"><div><h2>Fire TV Übersicht</h2><p>Status, Apps und Fernbedienung an einem Ort.</p></div><div class="version">v0.2.6</div></div>''')
+</style></head><body><header class="topbar"><div class="topbar-inner"><div class="brand"><div class="logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#17202a" d="M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-6v2h3v1H7v-1h3v-2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zm6 3v8l6-4z"/></svg></div><div><h1>Fire TV Control</h1><small>LoxBerry · Geräte & Steuerung</small></div></div><nav class="nav"><a href="config.cgi">⚙ Konfiguration</a><a href="debug.cgi">⌘ Debug</a></nav></div></header><main class="wrap"><div class="hero"><div><h2>Fire TV Übersicht</h2><p>Status, Apps und Fernbedienung an einem Ort.</p></div><div class="version">v__VERSION__</div></div>'''.replace('__VERSION__',html.escape(VERSION)))
 if msg:print('<div class="notice"><pre>%s</pre></div>'%html.escape(msg))
 if err:print('<div class="notice error"><b>%s</b></div>'%html.escape(err))
 print('<div class="grid">')
@@ -83,4 +96,4 @@ for d in c.get('devices',[]):
  print('<form method="post">%s<div class="section-label">Fernbedienung</div><div class="remote-wrap"><div class="remote"><button class="up" name="action" value="up" title="Hoch">▲</button><button class="left" name="action" value="left" title="Links">◀</button><button class="okbtn" name="action" value="ok">OK</button><button class="right" name="action" value="right" title="Rechts">▶</button><button class="down" name="action" value="down" title="Runter">▼</button></div><div><div class="quick"><button name="action" value="back">↩ Zurück</button><button class="primary" name="action" value="home">⌂ Home</button><button name="action" value="menu">☰ Menü</button><button name="action" value="playpause">⏯ Play/Pause</button><button name="action" value="volumedown">− Lautstärke</button><button name="action" value="volumeup">+ Lautstärke</button><button name="action" value="mute">🔇 Mute</button></div><div class="section-label">Power</div><div class="power"><button class="wake" name="action" value="wakeup">● Aufwecken</button><button class="sleep" name="action" value="standby">◐ Standby</button></div></div></div><div class="section-label">App starten</div><div class="app-launch"><input name="value" maxlength="256" placeholder="netflix, youtube oder Package-ID"><button class="primary" name="action" value="app">Starten</button></div></form></section>'%hidden)
 print('</div>')
 if not c.get('devices'):print('<div class="card empty"><h3>Noch kein Fire TV angelegt</h3><p>Lege unter Konfiguration dein erstes Gerät an.</p><a class="nav" href="config.cgi">Konfiguration öffnen</a></div>')
-print('<footer>Fire TV Control · Marco Düthorn · 2026 · v0.2.6</footer></main></body></html>')
+print('<footer>Fire TV Control · Marco Düthorn · 2026 · v%s</footer></main></body></html>'%html.escape(VERSION))
