@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.3
+- Feste linke LoxBerry-Navigation auf Dashboard, Einstellungen, Gerätesuche, Security Center und Debug vereinheitlicht
+- „Zurück zu LoxBerry“ ist auf Desktop und Mobilansicht überall erreichbar
+- Debug-Seite vollständig erneuert und in das LoxBerry-Design integriert
+- Debug-Seite zeigt ADB-, Python-, MQTT-, Watchdog- und Pluginstatus
+- Aktuell in LoxBerry gesetzter Plugin-Loglevel wird auf der Debug-Seite angezeigt
+- Geschützter Button zum Leeren des Fire-TV-Logs ergänzt
+- LoxBerry-Loglevel-Auswahl über `CUSTOM_LOGLEVELS=true` in der Pluginverwaltung aktiviert
+- Gerätesuche auf Netzen größer als /24 korrigiert: gescannt wird das /24 des tatsächlichen LoxBerry-Interfaces
+
 ## 0.3.2
 - Update-Sicherung der Benutzerkonfiguration auf robusten `/tmp`-Pfad umgestellt
 - Bestehende `config.json` wird vor Updates als gültiges JSON geprüft und gesichert
