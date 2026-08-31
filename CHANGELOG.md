@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.7
+- HDMI-CEC/TV-Einschalten pro Fire TV konfigurierbar gemacht
+- Neue TV-EIN-Methoden: Home, Home zweimal, Wakeup + Home, Power + Home und Automatik
+- TV-AUS-Methode pro Gerät zwischen Sleep/Standby und Power wählbar
+- CEC-Aktionen werden mit Methode und gesendeten ADB-Keyevents geloggt
+- Neue CEC-Diagnoseaktion `cecdiag` liest verfügbare HDMI-/CEC-Einstellungen und Fire-TV-Geräteinformationen aus
+- Neue Geräte verwenden standardmäßig `Home`, da diese Methode bei physischer Fire-TV-Fernbedienung typischerweise One-Touch-Play auslöst
+
 ## 0.3.6
 - Ed25519-Vertrauensschlüssel für sichere Updates rotiert
 - Neuer öffentlicher Update-Schlüssel im Plugin und Secure-Updater hinterlegt

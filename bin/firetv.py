@@ -98,12 +98,47 @@ class FireTV:
             except Exception as e:attempts.append(str(e))
         self.key(d)
         return {"ok":True,"action":d,"method":"keyevent-fallback","note":"Bei HDMI-CEC/IR kann Fire TV ADB die Hardware-Lautstärketaste nicht auf jedem TV vollständig emulieren."}
+    def _cec_sequence(self,name,steps):
+        debug_log(self.cfg,"info",f"CEC {name} für {self.device.get('name',self.target)} gestartet")
+        done=[]
+        for key,delay in steps:
+            if delay: time.sleep(delay)
+            self.key(key);done.append(key)
+            debug_log(self.cfg,"debug",f"CEC {name}: ADB keyevent {key} gesendet")
+        return done
     def tv_on(self):
-        self.key("wakeup");time.sleep(0.35);self.key("home")
-        return {"ok":True,"action":"tvon","method":"firetv-one-touch-play","note":"Fire TV Gerätesteuerung/HDMI-CEC muss aktiviert sein."}
+        method=str(self.device.get("cec_on_method","home") or "home").lower()
+        methods={
+            "home":[("home",0)],
+            "home_repeat":[("home",0),("home",0.8)],
+            "wakeup_home":[("wakeup",0),("home",0.8)],
+            "power_home":[("power",0),("home",1.0)],
+            "auto":[("home",0),("wakeup",1.0),("home",0.6),("home",0.8)],
+        }
+        if method not in methods: method="home"
+        steps=self._cec_sequence("TV EIN/"+method,methods[method])
+        return {"ok":True,"action":"tvon","method":method,"steps":steps,"note":"ADB-Keyevents können je nach Fire-TV-Modell anders als die physische Fernbedienung auf HDMI-CEC wirken."}
     def tv_off(self):
-        self.key("sleep")
-        return {"ok":True,"action":"tvoff","method":"firetv-standby-cec","note":"CEC-Standby hängt von Fire TV und TV-Gerätesteuerung ab."}
+        method=str(self.device.get("cec_off_method","sleep") or "sleep").lower()
+        if method not in ("sleep","power"):method="sleep"
+        steps=self._cec_sequence("TV AUS/"+method,[(method,0)])
+        return {"ok":True,"action":"tvoff","method":method,"steps":steps,"note":"CEC-Standby hängt von Fire TV und TV-Gerätesteuerung ab."}
+    def cec_diagnostics(self):
+        checks={}
+        commands={
+            "hdmi_control_enabled":("settings","get","global","hdmi_control_enabled"),
+            "cec_control_enabled":("settings","get","global","cec_control_enabled"),
+            "hdmi_cec_enabled":("settings","get","global","hdmi_cec_enabled"),
+            "amazon_equipment_control":("settings","get","secure","equipment_control_enabled"),
+            "model":("getprop","ro.product.model"),
+            "device":("getprop","ro.product.device"),
+            "fireos_build":("getprop","ro.build.version.incremental"),
+        }
+        for name,cmd in commands.items():
+            try:checks[name]=self.shell(*cmd).strip()
+            except Exception as e:checks[name]="error: "+str(e)
+        debug_log(self.cfg,"info",f"CEC Diagnose {self.device.get('name',self.target)}: {json.dumps(checks,ensure_ascii=False)}")
+        return {"ok":True,"action":"cecdiag","on_method":self.device.get("cec_on_method","home"),"off_method":self.device.get("cec_off_method","sleep"),"checks":checks}
     def launch(self,package):
         package=APP_PRESETS.get(str(package).lower(),package);out=self.shell("monkey","-p",str(package),"-c","android.intent.category.LAUNCHER","1");return {"ok":True,"package":package,"output":out[-500:]}
     def status(self):
@@ -124,6 +159,7 @@ class FireTV:
     def command(self,action,value=None):
         a=str(action).strip().lower()
         if a=="status":return self.status()
+        if a in ("cecdiag","cec_diagnostics"):return self.cec_diagnostics()
         if a in ("volumeup","volumedown","mute"):return self.volume(a)
         if a in KEYS:return self.key(a)
         if a=="standby":return self.key("sleep")
