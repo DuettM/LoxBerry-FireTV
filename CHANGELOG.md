@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0
+- Security Center mit sichtbarer Sicherheitsbewertung hinzugefügt
+- MQTT-Befehle werden über eine konfigurierbare Whitelist begrenzt
+- Riskante MQTT-Aktionen `reboot` und `text` sind standardmäßig gesperrt
+- Übergroße MQTT-Payloads und nicht freigegebene Aktionen werden blockiert
+- Geblockte MQTT-Aktionen werden über ein Security-Event gemeldet
+- Fire-TV-Netzwerksuche ist nur noch per POST mit CSRF-Schutz möglich
+- Content-Security-Policy, Frame-Schutz und Permissions-Policy für sensible Seiten ergänzt
+- Config-Migration auf Version 3 erhält bestehende Einstellungen und ergänzt sichere Defaults
+- Konfigurations- und Logrechte sowie Ownership bei Installation/Upgrade weiter gehärtet
+
 ## 0.2.9
 - TV-Einschaltlogik über Fire-TV-Wakeup plus Home für HDMI-CEC/One-Touch-Play ergänzt
 - TV-Ausschaltlogik über Fire-TV-Standby/CEC ergänzt
