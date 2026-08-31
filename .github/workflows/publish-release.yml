@@ -26,14 +26,18 @@ jobs:
       - name: Validate sources
         run: |
           python3 -m py_compile bin/firetv.py bin/mqtt_listener.py bin/watchdog.py bin/secure_update.py webfrontend/htmlauth/dashboard.cgi webfrontend/htmlauth/config.cgi webfrontend/htmlauth/discover.cgi webfrontend/htmlauth/security.cgi webfrontend/htmlauth/api.cgi webfrontend/htmlauth/debug.cgi
-          perl -c webfrontend/htmlauth/index.cgi
           bash -n postinstall.sh postupgrade.sh preupgrade.sh daemon/daemon cron/cron.01min uninstall/uninstall.sh
           python3 -m json.tool config/config.default.json >/dev/null
           test -f dpkg/apt
           grep -qx 'adb' dpkg/apt
           test -s icons/icon.svg
+          grep -q '^#!/usr/bin/perl' webfrontend/htmlauth/index.cgi
+          grep -q 'use LoxBerry::System' webfrontend/htmlauth/index.cgi
+          grep -q 'use LoxBerry::Web' webfrontend/htmlauth/index.cgi
           grep -q 'LoxBerry::Web::lbheader' webfrontend/htmlauth/index.cgi
+          grep -q 'LoxBerry::Web::lbfooter' webfrontend/htmlauth/index.cgi
           grep -q "frame-ancestors 'self'" webfrontend/htmlauth/config.cgi
+          grep -q 'X-Frame-Options: SAMEORIGIN' webfrontend/htmlauth/debug.cgi
 
       - name: Build deterministic release ZIP
         env:
