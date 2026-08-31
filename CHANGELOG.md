@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.2
+- Update-Sicherung der Benutzerkonfiguration auf robusten `/tmp`-Pfad umgestellt
+- Bestehende `config.json` wird vor Updates als gültiges JSON geprüft und gesichert
+- Konfiguration wird nach dem Update wiederhergestellt, bevor Migrationen laufen
+- Neue Standardwerte werden nur ergänzt; vorhandene Geräte und Einstellungen bleiben unverändert
+- Default-Konfiguration wird nur noch angelegt, wenn wirklich keine Benutzerkonfiguration vorhanden ist
+- „Zurück zu LoxBerry“-Link für Desktop und Mobilansicht ergänzt
+
 ## 0.3.1
 - Dashboard und Hauptseiten im hellen LoxBerry-Stil überarbeitet
 - LoxBerry-Grün, weiße Karten, kompakte Navigation und responsive Darstellung ergänzt
