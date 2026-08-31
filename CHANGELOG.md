@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.6
+- Ed25519-Vertrauensschlüssel für sichere Updates rotiert
+- Neuer öffentlicher Update-Schlüssel im Plugin und Secure-Updater hinterlegt
+- Secure-Updater auf Version 0.3.6 aktualisiert
+- Einmaliges manuelles Update auf 0.3.6 erforderlich, weil der bisherige private Signierschlüssel nicht mehr verfügbar ist
+- Ab 0.3.6 können zukünftige Releases wieder mit der neuen Vertrauenskette signiert und geprüft werden
+
 ## 0.3.5
 - Einstieg auf nativen LoxBerry-Webrahmen mit `LoxBerry::Web::lbheader()` und `lbfooter()` umgestellt
 - Echte LoxBerry-Navigationssymbole erscheinen wieder im oberen Seitenbereich wie bei nativen LoxBerry-Plugins
