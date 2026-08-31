@@ -31,7 +31,7 @@ with os.fdopen(fd,'w',encoding='utf-8') as f:
 os.chmod(tmp,0o600); os.replace(tmp,p)
 PYCFG
 chmod 700 "$PBIN/firetv.py" "$PBIN/mqtt_listener.py" "$PBIN/watchdog.py" "$PBIN/secure_update.py" 2>/dev/null || true
-chmod 755 "$PHTMLAUTH/index.cgi" "$PHTMLAUTH/config.cgi" "$PHTMLAUTH/discover.cgi" "$PHTMLAUTH/security.cgi" "$PHTMLAUTH/debug.cgi" "$PHTMLAUTH/api.cgi" "$PHTML/firetv.cgi" 2>/dev/null || true
+chmod 755 "$PHTMLAUTH/index.cgi" "$PHTMLAUTH/dashboard.cgi" "$PHTMLAUTH/config.cgi" "$PHTMLAUTH/discover.cgi" "$PHTMLAUTH/security.cgi" "$PHTMLAUTH/debug.cgi" "$PHTMLAUTH/api.cgi" "$PHTML/firetv.cgi" 2>/dev/null || true
 chmod 700 "$PCONFIG" "$PLOG" 2>/dev/null || true
 chmod 600 "$PCONFIG/config.json" "$PBIN/update_public_key.hex" 2>/dev/null || true
 touch "$PLOG/firetv.log" "$PLOG/mqtt-daemon.log" "$PLOG/watchdog.log" 2>/dev/null || true
