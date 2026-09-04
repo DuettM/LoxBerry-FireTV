@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import argparse,json,os,signal,socket,struct,sys,time,fcntl,importlib.util,random
+import argparse,hmac,json,os,signal,socket,struct,sys,time,fcntl,importlib.util,random
 RUN=True
 DEFAULT_ALLOWED={'tvon','tvoff','home','back','up','down','left','right','ok','menu','playpause','volumeup','volumedown','mute','app'}
 def stop(*_):
@@ -49,20 +49,26 @@ def payload(raw):
  if len(t)>1024:raise ValueError('MQTT Payload zu groß')
  try:
   o=json.loads(t)
-  if isinstance(o,dict):return str(o.get('action',o.get('cmd',''))),o.get('value',o.get('package'))
+  if isinstance(o,dict):return str(o.get('action',o.get('cmd',''))),o.get('value',o.get('package')),str(o.get('token',''))
  except Exception:pass
- if ':' in t:return tuple(x.strip() for x in t.split(':',1))
- return t,None
+ if ':' in t:
+  a,v=(x.strip() for x in t.split(':',1));return a,v,''
+ return t,None,''
 def allowed_action(cfg,action):
  m=cfg.get('mqtt',{});allowed=set(str(x).lower() for x in m.get('allowed_actions',DEFAULT_ALLOWED))
  if action=='reboot':return bool(m.get('allow_reboot',False))
  if action=='text':return bool(m.get('allow_text',False))
  return action in allowed
+def token_ok(cfg,sent):
+ m=cfg.get('mqtt',{})
+ if not m.get('command_token_required',False):return True
+ expected=str(m.get('command_token',''))
+ return bool(expected and sent and hmac.compare_digest(expected,str(sent)))
 def main():
  ap=argparse.ArgumentParser();ap.add_argument('--config',required=True);ap.add_argument('--core',required=True);a=ap.parse_args();lock=open(os.path.join(os.path.dirname(a.config),'mqtt_listener.lock'),'w')
  try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
  except BlockingIOError:return 0
- core=load_core(a.core);backoff=2
+ core=load_core(a.core);backoff=2;cfg={}
  while RUN:
   try:
    cfg=json.load(open(a.config,encoding='utf-8'));cfg['_config_path']=a.config
@@ -75,13 +81,19 @@ def main():
      if time.time()-last>20:c.ping();last=time.time()
      continue
     if h>>4!=3 or len(b)<2:continue
-    n=struct.unpack('!H',b[:2])[0];topic=b[2:2+n].decode('utf-8','replace');pos=2+n
-    if ((h>>1)&3):pos+=2
+    n=struct.unpack('!H',b[:2])[0]
+    if n<=0 or 2+n>len(b):continue
+    topic=b[2:2+n].decode('utf-8','replace');pos=2+n
+    if ((h>>1)&3):
+     if pos+2>len(b):continue
+     pos+=2
     rel=topic[len(base)+1:].split('/') if topic.startswith(base+'/') else []
-    if len(rel)!=2 or rel[1] not in ('set','command'):continue
-    action,value=payload(b[pos:]);action={'1':'tvon','true':'tvon','on':'tvon','0':'tvoff','false':'tvoff','off':'tvoff','pause':'playpause','play':'playpause'}.get(action.lower(),action.lower())
+    if len(rel)!=2 or rel[1] not in ('set','command') or not rel[0] or len(rel[0])>128:continue
+    action,value,sent_token=payload(b[pos:]);action={'1':'tvon','true':'tvon','on':'tvon','0':'tvoff','false':'tvoff','off':'tvoff','pause':'playpause','play':'playpause'}.get(action.lower(),action.lower())
+    if not token_ok(cfg,sent_token):
+     core.mqtt_event(cfg,'security',{'device':rel[0],'blocked_action':action,'reason':'bad-token'},False);continue
     if not allowed_action(cfg,action):
-     core.mqtt_event(cfg,'security',{'device':rel[0],'blocked_action':action},False);continue
+     core.mqtt_event(cfg,'security',{'device':rel[0],'blocked_action':action,'reason':'not-allowed'},False);continue
     if value is not None and len(str(value))>512:
      core.mqtt_event(cfg,'security',{'device':rel[0],'blocked_action':action,'reason':'value-too-long'},False);continue
     d=core.find_device(cfg,rel[0]);r=core.FireTV(cfg,d).command(action,value);core.mqtt_event(cfg,'event',{'device':rel[0],'action':action,'result':r},False)
