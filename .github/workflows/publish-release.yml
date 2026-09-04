@@ -71,6 +71,16 @@ jobs:
           PY
           sha256sum "LoxBerry-FireTV-${VERSION}.zip" > "LoxBerry-FireTV-${VERSION}.zip.sha256"
 
+      - name: Upload exact release candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: firetv-${{ steps.version.outputs.version }}-release-candidate
+          path: |
+            LoxBerry-FireTV-${{ steps.version.outputs.version }}.zip
+            LoxBerry-FireTV-${{ steps.version.outputs.version }}.zip.sha256
+          if-no-files-found: error
+          retention-days: 2
+
       - name: Verify Ed25519 signature
         env:
           VERSION: ${{ steps.version.outputs.version }}
@@ -80,6 +90,8 @@ jobs:
           cp "release-signatures/v${VERSION}.sig" "LoxBerry-FireTV-${VERSION}.zip.sig"
           EXPECTED="$(awk '{print $1; exit}' "release-signatures/v${VERSION}.sha256")"
           ACTUAL="$(sha256sum "LoxBerry-FireTV-${VERSION}.zip" | awk '{print $1}')"
+          echo "Expected SHA256: $EXPECTED"
+          echo "Actual SHA256:   $ACTUAL"
           test "$EXPECTED" = "$ACTUAL"
           python3 - <<'PY'
           import base64,importlib.util,os
@@ -104,7 +116,7 @@ jobs:
             exit 1
           fi
           python3 - <<'PY'
-          import os,re
+          import os
           version=os.environ['VERSION']
           text=open('CHANGELOG.md',encoding='utf-8').read().splitlines()
           start=None;out=[]
