@@ -1,5 +1,5 @@
 {
-  "config_version": 3,
+  "config_version": 4,
   "web_secret": "",
   "poll_interval": 30,
   "adb_timeout": 8,
@@ -10,10 +10,13 @@
     "retain_state": true,
     "allowed_actions": ["tvon", "tvoff", "home", "back", "up", "down", "left", "right", "ok", "menu", "playpause", "volumeup", "volumedown", "mute", "app"],
     "allow_reboot": false,
-    "allow_text": false
+    "allow_text": false,
+    "command_token_required": false,
+    "command_token": ""
   },
   "security": {
-    "discovery_post_only": true
+    "discovery_post_only": true,
+    "private_adb_only": true
   },
   "watchdog": {
     "enabled": true,
