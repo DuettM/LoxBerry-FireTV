@@ -1,21 +1,45 @@
-# Legal, trademarks and third-party software
+# Rechtliche Hinweise, Marken und Drittsoftware
 
-This repository is an independent, unofficial community project.
+Dieses Repository ist ein unabhängiges, inoffizielles Community-Projekt.
 
-It is not affiliated with, endorsed by, sponsored by, or supported by Loxone, LoxBerry, Amazon, Fire TV, or any other manufacturer or trademark owner whose products or services may interoperate with this software.
+Es besteht keine Verbindung zu und keine Unterstützung, Zertifizierung oder Freigabe durch Amazon, Fire TV, LoxBerry, Loxone oder andere Hersteller bzw. Markeninhaber, deren Produkte oder Dienste mit dieser Software zusammenarbeiten können.
 
-All product names, company names, logos and trademarks are the property of their respective owners. Their use in this repository is solely descriptive, to identify compatible products or services. No ownership or endorsement is claimed.
+Alle Produktnamen, Firmennamen, Logos und Marken sind Eigentum ihrer jeweiligen Inhaber. Ihre Verwendung in diesem Repository dient ausschließlich der beschreibenden Identifikation kompatibler Produkte und Dienste. Es werden keine Eigentums- oder Partnerschaftsrechte daran beansprucht.
 
-## License scope
+## Lizenzumfang
 
-The MIT License in `LICENSE` applies only to original project code for which the project author has the right to grant that license. Third-party libraries, APIs, assets and dependencies remain subject to their own licenses and terms. A dependency must not be relicensed merely because it is used by this project.
+Die MIT-Lizenz in `LICENSE` gilt für den originalen Projektcode, für den der Projektinhaber die entsprechenden Rechte besitzt.
 
-Before adding third-party code or assets, its license and redistribution terms must be checked and, where required, its copyright and license notices retained in `THIRD_PARTY_NOTICES.md` or alongside the component.
+Drittanbieter-Bibliotheken, Systempakete, APIs, Protokolle, Assets und Abhängigkeiten behalten ihre jeweiligen eigenen Lizenzen und Nutzungsbedingungen. Sie werden nicht dadurch unter MIT gestellt, dass dieses Plugin sie verwendet.
 
-## No warranty / use at own risk
+Hinweise zu externen Abhängigkeiten stehen in `THIRD_PARTY_NOTICES.md`.
 
-This software is provided as-is and without warranty. Device protocols and software behavior can change without notice. Users are responsible for installation, testing, account permissions, network security and compliance with manufacturer instructions and applicable terms.
+## Amazon Fire TV und ADB
 
-Users must use only devices and systems they are authorized to access. This project does not grant permission to bypass access controls, DRM, technical protection measures or third-party terms of service.
+Das Plugin verwendet Android Debug Bridge (ADB) als externe Systemabhängigkeit zur Kommunikation mit Fire-TV-Geräten. ADB wird nicht als eigener Bestandteil dieses Projekts neu lizenziert.
 
-No passwords, tokens, private keys, session cookies or production configuration should be committed to this repository.
+Die Nutzung von ADB, Fire TV und HDMI-CEC-Funktionen kann sich durch Firmware-, Betriebssystem- oder Herstelleränderungen jederzeit verändern. Nutzer sind selbst dafür verantwortlich, die jeweils geltenden Herstellerbedingungen und Geräteeinstellungen einzuhalten.
+
+## Keine Umgehung von Schutzmaßnahmen
+
+Dieses Projekt erteilt keine Erlaubnis, Zugangskontrollen, DRM, technische Schutzmaßnahmen, Geräteautorisierungen oder Bedingungen Dritter zu umgehen.
+
+ADB-Zugriff soll ausschließlich auf eigenen oder ausdrücklich autorisierten Geräten erfolgen. Die initiale ADB-Freigabe am Fire TV bleibt bewusst erforderlich.
+
+## Haftung / Nutzung auf eigenes Risiko
+
+Die Software wird ohne Gewährleistung bereitgestellt. Geräteprotokolle, APIs und Softwareverhalten können sich ohne Vorankündigung ändern.
+
+Nutzer sind selbst verantwortlich für:
+
+- Installation und Tests
+- Geräte- und Accountberechtigungen
+- Netzwerk- und Firewall-Sicherheit
+- Sicherung ihrer Konfiguration
+- Einhaltung von Herstellerbedingungen und gesetzlichen Vorgaben
+
+Es gelten zusätzlich die Haftungsausschlüsse der MIT-Lizenz.
+
+## Zugangsdaten und Geheimnisse
+
+Passwörter, Tokens, private Schlüssel, Session-Cookies oder produktive Konfigurationsdaten dürfen nicht in dieses öffentliche Repository eingecheckt werden.
