@@ -174,7 +174,7 @@ def find_device(cfg,ident):
         if ident in (str(d.get("id","")),slug(d.get("id","")),slug(d.get("name","")),str(d.get("ip",""))):return d
     raise KeyError("Fire TV nicht gefunden: "+ident)
 def publish_status(cfg,st):
-    b=base_topic(cfg)+"/"+st["id"];ret=bool(cfg.get("mqtt",{}).get("retain_state",True));mqtt_publish(cfg,b+"/online","1" if st.get("online") else "0",ret);mqtt_publish(cfg,b+"/authorized","1" if st.get("authorized") else "0",ret);mqtt_publish(cfg,b+"/awake","1" if st.get("awake") else "0",ret);mqtt_publish(cfg,b+"/app",st.get("app",""),ret);mqtt_publish(cfg,b+"/state",json.dumps(st,ensure_ascii=False,separators=(",",":")),ret)
+    b=base_topic(cfg)+"/"+st["id"];ret=bool(cfg.get("mqtt",{}).get("retain_state",True));mqtt_publish(cfg,b+"/online","1" if st.get("online") else "0",ret);mqtt_publish(cfg,b+"/authorized","1" if st.get("authorized") else "0",ret);mqtt_publish(cfg,b+"/awake","1" if st.get("awake") else "0",ret);mqtt_publish(cfg,b+"/display","ON" if st.get("awake") else "OFF",ret);mqtt_publish(cfg,b+"/app",st.get("app",""),ret);mqtt_publish(cfg,b+"/state",json.dumps(st,ensure_ascii=False,separators=(",",":")),ret)
 def main():
     ap=argparse.ArgumentParser();ap.add_argument("--config",required=True);ap.add_argument("--device");ap.add_argument("--action",default="status");ap.add_argument("--value");ap.add_argument("--poll-all",action="store_true");a=ap.parse_args();cfg=load_json(a.config);cfg["_config_path"]=a.config
     if a.poll_all:
