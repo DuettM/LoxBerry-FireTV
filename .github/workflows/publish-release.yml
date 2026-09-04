@@ -48,7 +48,7 @@ jobs:
           version=os.environ['VERSION']
           out=f'LoxBerry-FireTV-{version}.zip'
           roots=['bin','config','cron','daemon','dpkg','icons','uninstall','webfrontend']
-          singles=['plugin.cfg','postinstall.sh','postupgrade.sh','preupgrade.sh','release.cfg','prerelease.cfg','README.md','CHANGELOG.md','LICENSE','LEGAL.md','SECURITY.md']
+          singles=['plugin.cfg','postinstall.sh','postupgrade.sh','preupgrade.sh','release.cfg','prerelease.cfg','README.md','CHANGELOG.md','LICENSE','LEGAL.md','SECURITY.md','THIRD_PARTY_NOTICES.md']
           files=[]
           for root in roots:
               if not os.path.isdir(root): continue
