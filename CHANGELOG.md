@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.11
+- Ed25519-Vertrauenskette für künftige Releases erneuert
+- Neuer öffentlicher Update-Schlüssel im Secure-Updater hinterlegt
+- Einmaliges manuelles Update auf v0.3.11 erforderlich, wenn eine bestehende Installation noch den vorherigen öffentlichen Schlüssel verwendet
+- Release-Paketierung um `THIRD_PARTY_NOTICES.md` ergänzt
+- Funktionsstand von v0.3.10 einschließlich korrigierter `tvon`-/`tvoff`-Powerbuttons übernommen
+- Ab v0.3.11 können folgende Releases wieder über die neue signierte Update-Vertrauenskette geprüft werden
+
 ## 0.3.10
 - Dashboard-Powerbuttons korrigiert: `Einschalten` verwendet jetzt `tvon`, `Ausschalten/Standby` verwendet `tvoff`
 - Gerätespezifische TV-EIN-Methode wird dadurch auch im Dashboard respektiert, z. B. `Home 2×` mit einstellbarer Verzögerung
