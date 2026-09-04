@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import argparse,base64,hashlib,hmac,json,os,tempfile,urllib.parse,urllib.request
 ALLOWED_HOSTS={'raw.githubusercontent.com','github.com','objects.githubusercontent.com'}
-PUB='7a4d4d38b395929a857597c483234b7d1ddfa1ee4610ecb7b196365013d07bdd'
+PUB='ffe30e90c006712a29dae4e3cdbbdf81c745d64b9a002a263444ae98fc088eb1'
 b=256;q=2**255-19;l=2**252+27742317777372353535851937790883648493;d=(-121665*pow(121666,q-2,q))%q;I=pow(2,(q-1)//4,q)
 def H(m):return hashlib.sha512(m).digest()
 def Hint(m):return int.from_bytes(H(m),'little')
@@ -38,7 +38,7 @@ def verify(sig,msg,pub):
 def fetch(url,limit):
  u=urllib.parse.urlparse(url)
  if u.scheme!='https' or u.hostname not in ALLOWED_HOSTS:raise RuntimeError('Unsichere Update-URL')
- req=urllib.request.Request(url,headers={'User-Agent':'LoxBerry-FireTV-secure-updater/0.3.6'})
+ req=urllib.request.Request(url,headers={'User-Agent':'LoxBerry-FireTV-secure-updater/0.3.11'})
  with urllib.request.urlopen(req,timeout=20) as r:data=r.read(limit+1)
  if len(data)>limit:raise RuntimeError('Update-Datei zu groß')
  return data
