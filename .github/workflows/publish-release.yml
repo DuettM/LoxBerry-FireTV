@@ -39,6 +39,16 @@ jobs:
           grep -q "frame-ancestors 'self'" webfrontend/htmlauth/config.cgi
           grep -q 'X-Frame-Options: SAMEORIGIN' webfrontend/htmlauth/debug.cgi
 
+      - name: Reject duplicate release version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if gh release view "v${VERSION}" >/dev/null 2>&1; then
+            echo "Release v${VERSION} already exists"
+            exit 1
+          fi
+
       - name: Build deterministic release ZIP
         env:
           VERSION: ${{ steps.version.outputs.version }}
@@ -48,7 +58,7 @@ jobs:
           version=os.environ['VERSION']
           out=f'LoxBerry-FireTV-{version}.zip'
           roots=['bin','config','cron','daemon','dpkg','icons','uninstall','webfrontend']
-          singles=['plugin.cfg','postinstall.sh','postupgrade.sh','preupgrade.sh','release.cfg','prerelease.cfg','README.md','CHANGELOG.md','LICENSE','LEGAL.md','SECURITY.md','THIRD_PARTY_NOTICES.md']
+          singles=['plugin.cfg','postinstall.sh','postupgrade.sh','preupgrade.sh','release.cfg','prerelease.cfg','README.md','CHANGELOG.md','LICENSE','LEGAL.md','SECURITY.md','THIRD_PARTY_NOTICES.md','SIGNING.md']
           files=[]
           for root in roots:
               if not os.path.isdir(root): continue
@@ -71,28 +81,35 @@ jobs:
           PY
           sha256sum "LoxBerry-FireTV-${VERSION}.zip" > "LoxBerry-FireTV-${VERSION}.zip.sha256"
 
-      - name: Upload exact release candidate
-        uses: actions/upload-artifact@v4
-        with:
-          name: firetv-${{ steps.version.outputs.version }}-release-candidate
-          path: |
-            LoxBerry-FireTV-${{ steps.version.outputs.version }}.zip
-            LoxBerry-FireTV-${{ steps.version.outputs.version }}.zip.sha256
-          if-no-files-found: error
-          retention-days: 2
+      - name: Sign release ZIP with Ed25519 secret
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          FIRETV_ED25519_PRIVATE_KEY: ${{ secrets.FIRETV_ED25519_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          test -n "$FIRETV_ED25519_PRIVATE_KEY" || { echo 'Missing repository secret FIRETV_ED25519_PRIVATE_KEY'; exit 1; }
+          umask 077
+          printf '%s\n' "$FIRETV_ED25519_PRIVATE_KEY" > private.pem
+          openssl pkey -in private.pem -noout >/dev/null
+          ACTUAL_PUB="$(openssl pkey -in private.pem -pubout -outform DER | tail -c 32 | od -An -tx1 | tr -d ' \n')"
+          EXPECTED_PUB="$(python3 - <<'PY'
+          import importlib.util
+          spec=importlib.util.spec_from_file_location('secure_update','bin/secure_update.py')
+          module=importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          print(module.PUB)
+          PY
+          )"
+          test "$ACTUAL_PUB" = "$EXPECTED_PUB" || { echo 'Signing key does not match embedded public key'; exit 1; }
+          openssl pkeyutl -sign -rawin -inkey private.pem -in "LoxBerry-FireTV-${VERSION}.zip" -out release.sig.bin
+          base64 -w0 release.sig.bin > "LoxBerry-FireTV-${VERSION}.zip.sig"
+          printf '\n' >> "LoxBerry-FireTV-${VERSION}.zip.sig"
+          rm -f private.pem release.sig.bin
 
-      - name: Verify Ed25519 signature
+      - name: Verify generated signature
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          test -f "release-signatures/v${VERSION}.sig"
-          test -f "release-signatures/v${VERSION}.sha256"
-          cp "release-signatures/v${VERSION}.sig" "LoxBerry-FireTV-${VERSION}.zip.sig"
-          EXPECTED="$(awk '{print $1; exit}' "release-signatures/v${VERSION}.sha256")"
-          ACTUAL="$(sha256sum "LoxBerry-FireTV-${VERSION}.zip" | awk '{print $1}')"
-          echo "Expected SHA256: $EXPECTED"
-          echo "Actual SHA256:   $ACTUAL"
-          test "$EXPECTED" = "$ACTUAL"
           python3 - <<'PY'
           import base64,importlib.util,os
           version=os.environ['VERSION']
@@ -111,10 +128,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          if gh release view "v${VERSION}" >/dev/null 2>&1; then
-            echo "Release v${VERSION} already exists"
-            exit 1
-          fi
           python3 - <<'PY'
           import os
           version=os.environ['VERSION']
@@ -124,6 +137,8 @@ jobs:
               if line.strip()==f'## {version}': start=i
               elif start is not None and i>start and line.startswith('## '): break
               if start is not None: out.append(line)
+          if not out:
+              raise SystemExit(f'No CHANGELOG section found for {version}')
           open('release-notes.md','w',encoding='utf-8').write('\n'.join(out).strip()+'\n')
           PY
           gh release create "v${VERSION}" \
@@ -132,3 +147,37 @@ jobs:
             "LoxBerry-FireTV-${VERSION}.zip.sig" \
             --title "Fire TV Control v${VERSION}" \
             --notes-file release-notes.md
+
+      - name: Update LoxBerry release manifests
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          cat > release.cfg <<EOF
+          [RELEASE]
+          VERSION=${VERSION}
+          ARCHIVEURL=https://github.com/DuettM/LoxBerry-FireTV/releases/download/v${VERSION}/LoxBerry-FireTV-${VERSION}.zip
+          SHA256URL=https://github.com/DuettM/LoxBerry-FireTV/releases/download/v${VERSION}/LoxBerry-FireTV-${VERSION}.zip.sha256
+          SIGURL=https://github.com/DuettM/LoxBerry-FireTV/releases/download/v${VERSION}/LoxBerry-FireTV-${VERSION}.zip.sig
+          INFOURL=https://raw.githubusercontent.com/DuettM/LoxBerry-FireTV/main/CHANGELOG.md
+          EOF
+          cp release.cfg prerelease.cfg
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add release.cfg prerelease.cfg
+          if git diff --cached --quiet; then
+            echo 'Release manifests already current'
+          else
+            git commit -m "Point FireTV updater to v${VERSION}"
+            git push
+          fi
+
+      - name: Upload signed release package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: firetv-${{ steps.version.outputs.version }}-signed-release
+          path: |
+            LoxBerry-FireTV-${{ steps.version.outputs.version }}.zip
+            LoxBerry-FireTV-${{ steps.version.outputs.version }}.zip.sha256
+            LoxBerry-FireTV-${{ steps.version.outputs.version }}.zip.sig
+          if-no-files-found: error
+          retention-days: 14
