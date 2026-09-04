@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import argparse,json,os,re,socket,struct,subprocess,sys,time
+import argparse,ipaddress,json,os,re,socket,struct,subprocess,sys,time
 
 KEYS={"home":3,"back":4,"up":19,"down":20,"left":21,"right":22,"ok":23,"enter":66,"menu":82,"playpause":85,"stop":86,"next":87,"previous":88,"rewind":89,"fastforward":90,"mute":164,"volumeup":24,"volumedown":25,"wakeup":224,"sleep":223,"power":26}
 APP_PRESETS={"prime":"com.amazon.firebat","primevideo":"com.amazon.firebat","netflix":"com.netflix.ninja","youtube":"com.amazon.firetv.youtube","disney":"com.disney.disneyplus","disneyplus":"com.disney.disneyplus","spotify":"com.spotify.tv.android"}
@@ -20,6 +20,9 @@ def mqtt_connection_config(cfg):
         g=load_json(general_json());m=g.get("Mqtt",{})
         return {"host":m.get("Brokerhost","127.0.0.1"),"port":int(m.get("Brokerport",1883)),"username":m.get("Brokeruser",""),"password":m.get("Brokerpass","")}
     except Exception:return {"host":"127.0.0.1","port":1883,"username":"","password":""}
+def mqtt_source_mtime(cfg):
+    try:return os.path.getmtime(general_json())
+    except Exception:return 0
 def log_path(cfg):
     cp=cfg.get("_config_path","");folder=os.path.basename(os.path.dirname(cp)) if cp else "firetv"
     return os.path.join(plugin_root(),"log","plugins",folder,"firetv.log")
@@ -57,11 +60,22 @@ def mqtt_event(cfg,suffix,data,retain=False):
     payload=data if isinstance(data,str) else json.dumps(data,ensure_ascii=False,separators=(",",":"))
     return mqtt_publish(cfg,base_topic(cfg)+"/"+suffix,payload,retain)
 
+def validate_adb_target(cfg,ip,port):
+    try:addr=ipaddress.ip_address(str(ip).strip())
+    except ValueError:raise ValueError("Ungültige Fire-TV-IP-Adresse")
+    if addr.is_multicast or addr.is_unspecified:raise ValueError("Unsichere Fire-TV-IP-Adresse")
+    if cfg.get("security",{}).get("private_adb_only",True) and not (addr.is_private or addr.is_loopback or addr.is_link_local):
+        raise ValueError("ADB-Ziel außerhalb des privaten Netzes blockiert")
+    try:p=int(port)
+    except Exception:raise ValueError("Ungültiger ADB-Port")
+    if p<1 or p>65535:raise ValueError("Ungültiger ADB-Port")
+    return str(addr),p
+
 class FireTV:
     def __init__(self,cfg,device):
-        self.cfg=cfg;self.device=device;self.ip=str(device.get("ip","")).strip();self.port=int(device.get("port",5555));self.target=f"{self.ip}:{self.port}";self.timeout=max(2,int(cfg.get("adb_timeout",8)))
+        self.cfg=cfg;self.device=device;self.ip,self.port=validate_adb_target(cfg,device.get("ip",""),device.get("port",5555));self.target=f"{self.ip}:{self.port}";self.timeout=max(2,min(30,int(cfg.get("adb_timeout",8))))
     def _run(self,args):
-        try:p=subprocess.run(args,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=self.timeout)
+        try:p=subprocess.run(args,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=self.timeout,check=False)
         except FileNotFoundError:raise RuntimeError("ADB ist nicht installiert")
         except subprocess.TimeoutExpired:raise RuntimeError("ADB Zeitüberschreitung")
         return p.returncode,(p.stdout or "").strip()
@@ -70,20 +84,17 @@ class FireTV:
         if "unauthorized" in low:return "unauthorized",out
         if "offline" in low:return "offline",out
         if low=="device":return "device",out
-        rc2,devs=self._run(["adb","devices"])
+        _,devs=self._run(["adb","devices"])
         for line in devs.splitlines():
-            if line.startswith(self.target+"\t"):
-                state=line.split("\t",1)[1].strip().lower();return state,devs
+            if line.startswith(self.target+"\t"):return line.split("\t",1)[1].strip().lower(),devs
         return "disconnected",out or devs
     def connect(self):
-        rc,out=self._run(["adb","connect",self.target]);state,detail=self._state();msg=(out+" | "+detail).strip(" |")
+        _,out=self._run(["adb","connect",self.target]);state,detail=self._state();msg=(out+" | "+detail).strip(" |")
         return {"ok":state=="device","authorized":state=="device","state":state,"message":msg}
     def reconnect(self):
         try:self._run(["adb","disconnect",self.target])
         except Exception:pass
-        time.sleep(.35);rc,out=self._run(["adb","connect",self.target]);time.sleep(.35);state,detail=self._state()
-        debug_log(self.cfg,"info",f"ADB reconnect {self.target}: {state}")
-        msg=(out+" | "+detail).strip(" |")
+        time.sleep(.35);_,out=self._run(["adb","connect",self.target]);time.sleep(.35);state,detail=self._state();debug_log(self.cfg,"info",f"ADB reconnect {self.target}: {state}");msg=(out+" | "+detail).strip(" |")
         if state=="unauthorized":return {"ok":False,"authorized":False,"state":state,"message":"Bestätigung am Fire TV erforderlich","adb_output":msg}
         if state=="offline":return {"ok":False,"authorized":False,"state":state,"message":"ADB-Gerät ist offline","adb_output":msg}
         if state!="device":return {"ok":False,"authorized":False,"state":state,"message":"ADB-Verbindung konnte nicht hergestellt werden","adb_output":msg}
@@ -118,11 +129,9 @@ class FireTV:
         method=str(self.device.get("cec_on_method","home") or "home").lower()
         try:delay=float(self.device.get("cec_on_delay",0.8))
         except Exception:delay=.8
-        delay=min(max(delay,.1),5.0)
-        methods={"home":[("home",0)],"home_repeat":[("home",0),("home",delay)],"wakeup_home":[("wakeup",0),("home",delay)],"power_home":[("power",0),("home",delay)],"auto":[("wakeup",0),("home",delay),("home",delay)]}
+        delay=min(max(delay,.1),5.0);methods={"home":[("home",0)],"home_repeat":[("home",0),("home",delay)],"wakeup_home":[("wakeup",0),("home",delay)],"power_home":[("power",0),("home",delay)],"auto":[("wakeup",0),("home",delay),("home",delay)]}
         if method not in methods:method="home"
-        steps=self._cec_sequence("TV EIN/"+method,methods[method])
-        return {"ok":True,"action":"tvon","method":method,"delay":delay,"steps":steps}
+        steps=self._cec_sequence("TV EIN/"+method,methods[method]);return {"ok":True,"action":"tvon","method":method,"delay":delay,"steps":steps}
     def tv_off(self):
         method=str(self.device.get("cec_off_method","sleep") or "sleep").lower()
         if method not in ("sleep","power"):method="sleep"
@@ -134,7 +143,9 @@ class FireTV:
             except Exception as e:checks[name]="error: "+str(e)
         return {"ok":True,"action":"cecdiag","on_method":self.device.get("cec_on_method","home"),"on_delay":self.device.get("cec_on_delay",.8),"off_method":self.device.get("cec_off_method","sleep"),"checks":checks}
     def launch(self,package):
-        package=APP_PRESETS.get(str(package).lower(),package);out=self.shell("monkey","-p",str(package),"-c","android.intent.category.LAUNCHER","1");return {"ok":True,"package":package,"output":out[-500:]}
+        package=APP_PRESETS.get(str(package).lower(),package);package=str(package).strip()
+        if not re.fullmatch(r"[A-Za-z0-9._-]{1,200}",package):raise ValueError("Ungültiger Paketname")
+        out=self.shell("monkey","-p",package,"-c","android.intent.category.LAUNCHER","1");return {"ok":True,"package":package,"output":out[-500:]}
     def status(self):
         r={"name":self.device.get("name","Fire TV"),"ip":self.ip,"port":self.port,"id":slug(self.device.get("id") or self.device.get("name") or self.ip),"online":False,"authorized":False}
         c=self.connect();r["adb_message"]=c["message"];r["adb_state"]=c.get("state");r["authorized"]=bool(c["authorized"])
@@ -164,12 +175,15 @@ class FireTV:
             return self.launch(value)
         if a=="text":
             if value is None:raise ValueError("Text fehlt")
-            self.shell("input","text",str(value).replace(" ","%s"));return {"ok":True,"action":"text"}
+            v=str(value)
+            if len(v)>512 or any(ord(ch)<32 and ch not in "\t" for ch in v):raise ValueError("Ungültiger Text")
+            self.shell("input","text",v.replace(" ","%s"));return {"ok":True,"action":"text"}
         if a=="apps":return {"ok":True,"apps":self.list_apps()}
         raise ValueError("Unbekannter Befehl: "+a)
 
 def find_device(cfg,ident):
     ident=str(ident)
+    if len(ident)>128 or re.search(r"[\r\n\x00/]",ident):raise KeyError("Ungültige Geräte-ID")
     for d in cfg.get("devices",[]):
         if ident in (str(d.get("id","")),slug(d.get("id","")),slug(d.get("name","")),str(d.get("ip",""))):return d
     raise KeyError("Fire TV nicht gefunden: "+ident)
