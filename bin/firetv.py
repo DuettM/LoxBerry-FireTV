@@ -1,41 +1,33 @@
 #!/usr/bin/env python3
-import argparse, json, os, re, socket, struct, subprocess, sys, time, tempfile
+import argparse,json,os,re,socket,struct,subprocess,sys,time
 
 KEYS={"home":3,"back":4,"up":19,"down":20,"left":21,"right":22,"ok":23,"enter":66,"menu":82,"playpause":85,"stop":86,"next":87,"previous":88,"rewind":89,"fastforward":90,"mute":164,"volumeup":24,"volumedown":25,"wakeup":224,"sleep":223,"power":26}
 APP_PRESETS={"prime":"com.amazon.firebat","primevideo":"com.amazon.firebat","netflix":"com.netflix.ninja","youtube":"com.amazon.firetv.youtube","disney":"com.disney.disneyplus","disneyplus":"com.disney.disneyplus","spotify":"com.spotify.tv.android"}
 
 def load_json(path):
     with open(path,encoding="utf-8") as f:return json.load(f)
-
 def plugin_root():
     root=os.environ.get("LBHOMEDIR") or os.environ.get("LBHOME")
-    if not root: raise RuntimeError("LBHOMEDIR/LBHOME ist nicht gesetzt")
+    if not root:raise RuntimeError("LBHOMEDIR/LBHOME ist nicht gesetzt")
     return root
-def general_json(): return os.path.join(plugin_root(),"config","system","general.json")
-def base_topic(cfg): return str(cfg.get("mqtt",{}).get("base_topic","firetv") or "firetv").strip().strip("/")
+def general_json():return os.path.join(plugin_root(),"config","system","general.json")
+def base_topic(cfg):return str(cfg.get("mqtt",{}).get("base_topic","firetv") or "firetv").strip().strip("/")
 def slug(s):
     s=re.sub(r"[^a-zA-Z0-9_-]+","-",str(s).strip().lower()).strip("-")
     return s or "device"
-def mqtt_source_mtime(cfg=None):
-    try:return os.path.getmtime(general_json())
-    except OSError:return 0
-
 def mqtt_connection_config(cfg):
     try:
-        g=load_json(general_json()); m=g.get("Mqtt",{})
+        g=load_json(general_json());m=g.get("Mqtt",{})
         return {"host":m.get("Brokerhost","127.0.0.1"),"port":int(m.get("Brokerport",1883)),"username":m.get("Brokeruser",""),"password":m.get("Brokerpass","")}
     except Exception:return {"host":"127.0.0.1","port":1883,"username":"","password":""}
-
 def log_path(cfg):
-    cp=cfg.get("_config_path","")
-    folder=os.path.basename(os.path.dirname(cp)) if cp else "firetv"
+    cp=cfg.get("_config_path","");folder=os.path.basename(os.path.dirname(cp)) if cp else "firetv"
     return os.path.join(plugin_root(),"log","plugins",folder,"firetv.log")
 def debug_log(cfg,level,msg):
     try:
-        p=log_path(cfg); os.makedirs(os.path.dirname(p),exist_ok=True)
+        p=log_path(cfg);os.makedirs(os.path.dirname(p),exist_ok=True)
         with open(p,"a",encoding="utf-8") as f:f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} [{str(level).upper()}] {msg}\n")
     except Exception:pass
-
 def _enc_len(n):
     out=b""
     while True:
@@ -45,7 +37,6 @@ def _enc_len(n):
         if not n:return out
 def _mstr(v):
     b=str(v).encode();return struct.pack("!H",len(b))+b
-
 def mqtt_publish(cfg,topic,payload,retain=False):
     if not cfg.get("mqtt",{}).get("enabled",True):return False
     mc=mqtt_connection_config(cfg);s=None
@@ -62,7 +53,6 @@ def mqtt_publish(cfg,topic,payload,retain=False):
         try:
             if s:s.close()
         except Exception:pass
-
 def mqtt_event(cfg,suffix,data,retain=False):
     payload=data if isinstance(data,str) else json.dumps(data,ensure_ascii=False,separators=(",",":"))
     return mqtt_publish(cfg,base_topic(cfg)+"/"+suffix,payload,retain)
@@ -75,13 +65,35 @@ class FireTV:
         except FileNotFoundError:raise RuntimeError("ADB ist nicht installiert")
         except subprocess.TimeoutExpired:raise RuntimeError("ADB Zeitüberschreitung")
         return p.returncode,(p.stdout or "").strip()
+    def _state(self):
+        rc,out=self._run(["adb","-s",self.target,"get-state"]);low=out.lower().strip()
+        if "unauthorized" in low:return "unauthorized",out
+        if "offline" in low:return "offline",out
+        if low=="device":return "device",out
+        rc2,devs=self._run(["adb","devices"])
+        for line in devs.splitlines():
+            if line.startswith(self.target+"\t"):
+                state=line.split("\t",1)[1].strip().lower();return state,devs
+        return "disconnected",out or devs
     def connect(self):
-        rc,out=self._run(["adb","connect",self.target]);low=out.lower()
-        if "unauthorized" in low:return {"ok":False,"authorized":False,"message":out}
-        ok=("connected to" in low or "already connected" in low)
-        return {"ok":ok,"authorized":ok,"message":out}
+        rc,out=self._run(["adb","connect",self.target]);state,detail=self._state();msg=(out+" | "+detail).strip(" |")
+        return {"ok":state=="device","authorized":state=="device","state":state,"message":msg}
+    def reconnect(self):
+        try:self._run(["adb","disconnect",self.target])
+        except Exception:pass
+        time.sleep(.35);rc,out=self._run(["adb","connect",self.target]);time.sleep(.35);state,detail=self._state()
+        debug_log(self.cfg,"info",f"ADB reconnect {self.target}: {state}")
+        msg=(out+" | "+detail).strip(" |")
+        if state=="unauthorized":return {"ok":False,"authorized":False,"state":state,"message":"Bestätigung am Fire TV erforderlich","adb_output":msg}
+        if state=="offline":return {"ok":False,"authorized":False,"state":state,"message":"ADB-Gerät ist offline","adb_output":msg}
+        if state!="device":return {"ok":False,"authorized":False,"state":state,"message":"ADB-Verbindung konnte nicht hergestellt werden","adb_output":msg}
+        return {"ok":True,"authorized":True,"state":"device","message":"ADB autorisiert und verbunden","adb_output":msg}
     def shell(self,*args):
-        self.connect();rc,out=self._run(["adb","-s",self.target,"shell",*map(str,args)]);low=out.lower()
+        c=self.connect()
+        if not c.get("authorized"):
+            if c.get("state")=="unauthorized":raise RuntimeError("ADB nicht autorisiert – Verbindung am Fire TV bestätigen")
+            raise RuntimeError(c.get("message") or "ADB nicht verbunden")
+        rc,out=self._run(["adb","-s",self.target,"shell",*map(str,args)]);low=out.lower()
         if "unauthorized" in low:raise RuntimeError("ADB nicht autorisiert – Verbindung am Fire TV bestätigen")
         if "no devices" in low or "offline" in low or "not found" in low:raise RuntimeError(out)
         return out
@@ -90,68 +102,48 @@ class FireTV:
     def volume(self,direction):
         d=str(direction).lower();adj={"volumeup":"raise","volumedown":"lower","mute":"toggle"}.get(d)
         if not adj:raise ValueError("Ungültige Lautstärkeaktion")
-        attempts=[]
         for cmd in (("cmd","media_session","volume","--stream","3","--adj",adj),("media","volume","--stream","3","--adj",adj)):
             try:
-                out=self.shell(*cmd); attempts.append(out)
+                out=self.shell(*cmd)
                 if "unknown" not in out.lower() and "error" not in out.lower():return {"ok":True,"action":d,"method":"media_session","output":out[-300:]}
-            except Exception as e:attempts.append(str(e))
-        self.key(d)
-        return {"ok":True,"action":d,"method":"keyevent-fallback","note":"Bei HDMI-CEC/IR kann Fire TV ADB die Hardware-Lautstärketaste nicht auf jedem TV vollständig emulieren."}
+            except Exception:pass
+        self.key(d);return {"ok":True,"action":d,"method":"keyevent-fallback"}
     def _cec_sequence(self,name,steps):
-        debug_log(self.cfg,"info",f"CEC {name} für {self.device.get('name',self.target)} gestartet")
-        done=[]
+        debug_log(self.cfg,"info",f"CEC {name} für {self.device.get('name',self.target)} gestartet");done=[]
         for key,delay in steps:
-            if delay: time.sleep(delay)
+            if delay:time.sleep(delay)
             self.key(key);done.append(key)
-            debug_log(self.cfg,"debug",f"CEC {name}: ADB keyevent {key} gesendet")
         return done
     def tv_on(self):
         method=str(self.device.get("cec_on_method","home") or "home").lower()
-        methods={
-            "home":[("home",0)],
-            "home_repeat":[("home",0),("home",0.8)],
-            "wakeup_home":[("wakeup",0),("home",0.8)],
-            "power_home":[("power",0),("home",1.0)],
-            "auto":[("home",0),("wakeup",1.0),("home",0.6),("home",0.8)],
-        }
-        if method not in methods: method="home"
+        try:delay=float(self.device.get("cec_on_delay",0.8))
+        except Exception:delay=.8
+        delay=min(max(delay,.1),5.0)
+        methods={"home":[("home",0)],"home_repeat":[("home",0),("home",delay)],"wakeup_home":[("wakeup",0),("home",delay)],"power_home":[("power",0),("home",delay)],"auto":[("wakeup",0),("home",delay),("home",delay)]}
+        if method not in methods:method="home"
         steps=self._cec_sequence("TV EIN/"+method,methods[method])
-        return {"ok":True,"action":"tvon","method":method,"steps":steps,"note":"ADB-Keyevents können je nach Fire-TV-Modell anders als die physische Fernbedienung auf HDMI-CEC wirken."}
+        return {"ok":True,"action":"tvon","method":method,"delay":delay,"steps":steps}
     def tv_off(self):
         method=str(self.device.get("cec_off_method","sleep") or "sleep").lower()
         if method not in ("sleep","power"):method="sleep"
-        steps=self._cec_sequence("TV AUS/"+method,[(method,0)])
-        return {"ok":True,"action":"tvoff","method":method,"steps":steps,"note":"CEC-Standby hängt von Fire TV und TV-Gerätesteuerung ab."}
+        return {"ok":True,"action":"tvoff","method":method,"steps":self._cec_sequence("TV AUS/"+method,[(method,0)])}
     def cec_diagnostics(self):
         checks={}
-        commands={
-            "hdmi_control_enabled":("settings","get","global","hdmi_control_enabled"),
-            "cec_control_enabled":("settings","get","global","cec_control_enabled"),
-            "hdmi_cec_enabled":("settings","get","global","hdmi_cec_enabled"),
-            "amazon_equipment_control":("settings","get","secure","equipment_control_enabled"),
-            "model":("getprop","ro.product.model"),
-            "device":("getprop","ro.product.device"),
-            "fireos_build":("getprop","ro.build.version.incremental"),
-        }
-        for name,cmd in commands.items():
+        for name,cmd in {"hdmi_control_enabled":("settings","get","global","hdmi_control_enabled"),"cec_control_enabled":("settings","get","global","cec_control_enabled"),"hdmi_cec_enabled":("settings","get","global","hdmi_cec_enabled"),"amazon_equipment_control":("settings","get","secure","equipment_control_enabled"),"model":("getprop","ro.product.model"),"device":("getprop","ro.product.device"),"fireos_build":("getprop","ro.build.version.incremental")}.items():
             try:checks[name]=self.shell(*cmd).strip()
             except Exception as e:checks[name]="error: "+str(e)
-        debug_log(self.cfg,"info",f"CEC Diagnose {self.device.get('name',self.target)}: {json.dumps(checks,ensure_ascii=False)}")
-        return {"ok":True,"action":"cecdiag","on_method":self.device.get("cec_on_method","home"),"off_method":self.device.get("cec_off_method","sleep"),"checks":checks}
+        return {"ok":True,"action":"cecdiag","on_method":self.device.get("cec_on_method","home"),"on_delay":self.device.get("cec_on_delay",.8),"off_method":self.device.get("cec_off_method","sleep"),"checks":checks}
     def launch(self,package):
         package=APP_PRESETS.get(str(package).lower(),package);out=self.shell("monkey","-p",str(package),"-c","android.intent.category.LAUNCHER","1");return {"ok":True,"package":package,"output":out[-500:]}
     def status(self):
         r={"name":self.device.get("name","Fire TV"),"ip":self.ip,"port":self.port,"id":slug(self.device.get("id") or self.device.get("name") or self.ip),"online":False,"authorized":False}
-        c=self.connect();r["adb_message"]=c["message"];r["authorized"]=bool(c["authorized"])
+        c=self.connect();r["adb_message"]=c["message"];r["adb_state"]=c.get("state");r["authorized"]=bool(c["authorized"])
         if not c["ok"]:return r
         try:
-            r["online"]=self._run(["adb","-s",self.target,"get-state"])[1].strip()=="device";r["model"]=self.shell("getprop","ro.product.model").strip();r["manufacturer"]=self.shell("getprop","ro.product.manufacturer").strip();r["android"]=self.shell("getprop","ro.build.version.release").strip();r["build"]=self.shell("getprop","ro.build.version.incremental").strip();power=self.shell("dumpsys","power");r["awake"]=bool(re.search(r"mWakefulness=Awake|Display Power: state=ON|state=ON",power,re.I));win=self.shell("dumpsys","window","windows");m=re.search(r"mCurrentFocus=.*?\s([A-Za-z0-9._]+)/(?:[A-Za-z0-9._$]+)",win)
+            r["online"]=True;r["model"]=self.shell("getprop","ro.product.model").strip();r["manufacturer"]=self.shell("getprop","ro.product.manufacturer").strip();r["android"]=self.shell("getprop","ro.build.version.release").strip();r["build"]=self.shell("getprop","ro.build.version.incremental").strip();power=self.shell("dumpsys","power");r["awake"]=bool(re.search(r"mWakefulness=Awake|Display Power: state=ON|state=ON",power,re.I));win=self.shell("dumpsys","window","windows");m=re.search(r"mCurrentFocus=.*?\s([A-Za-z0-9._]+)/(?:[A-Za-z0-9._$]+)",win)
             if not m:
                 act=self.shell("dumpsys","activity","activities");m=re.search(r"mResumedActivity:.*?\s([A-Za-z0-9._]+)/",act)
             r["app"]=m.group(1) if m else ""
-            try:r["cec_setting"]=self.shell("settings","get","global","hdmi_control_enabled").strip()
-            except Exception:r["cec_setting"]="unknown"
         except Exception as e:r["error"]=str(e)
         return r
     def list_apps(self):
@@ -159,6 +151,7 @@ class FireTV:
     def command(self,action,value=None):
         a=str(action).strip().lower()
         if a=="status":return self.status()
+        if a in ("reconnect","adb_reconnect"):return self.reconnect()
         if a in ("cecdiag","cec_diagnostics"):return self.cec_diagnostics()
         if a in ("volumeup","volumedown","mute"):return self.volume(a)
         if a in KEYS:return self.key(a)
@@ -180,10 +173,8 @@ def find_device(cfg,ident):
     for d in cfg.get("devices",[]):
         if ident in (str(d.get("id","")),slug(d.get("id","")),slug(d.get("name","")),str(d.get("ip",""))):return d
     raise KeyError("Fire TV nicht gefunden: "+ident)
-
 def publish_status(cfg,st):
     b=base_topic(cfg)+"/"+st["id"];ret=bool(cfg.get("mqtt",{}).get("retain_state",True));mqtt_publish(cfg,b+"/online","1" if st.get("online") else "0",ret);mqtt_publish(cfg,b+"/authorized","1" if st.get("authorized") else "0",ret);mqtt_publish(cfg,b+"/awake","1" if st.get("awake") else "0",ret);mqtt_publish(cfg,b+"/app",st.get("app",""),ret);mqtt_publish(cfg,b+"/state",json.dumps(st,ensure_ascii=False,separators=(",",":")),ret)
-
 def main():
     ap=argparse.ArgumentParser();ap.add_argument("--config",required=True);ap.add_argument("--device");ap.add_argument("--action",default="status");ap.add_argument("--value");ap.add_argument("--poll-all",action="store_true");a=ap.parse_args();cfg=load_json(a.config);cfg["_config_path"]=a.config
     if a.poll_all:
