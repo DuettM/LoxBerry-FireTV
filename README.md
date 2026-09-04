@@ -2,7 +2,7 @@
 
 LoxBerry-Plugin zur Abfrage und Steuerung eines oder mehrerer Amazon Fire TV / Fire TV Stick Geräte per Netzwerk-ADB.
 
-Aktueller Entwicklungsstand: **v0.3.10**.
+Aktueller Entwicklungsstand: **v0.3.11**.
 
 > Unabhängiges Community-Projekt. Nicht mit Amazon, Fire TV, LoxBerry oder Loxone verbunden oder von diesen unterstützt.
 
@@ -28,17 +28,14 @@ Aktueller Entwicklungsstand: **v0.3.10**.
 - updatefeste Benutzerkonfiguration mit Backup/Restore und Default-Merge
 - sichere Update-Prüfung mit SHA-256 und Ed25519 für signierte Releases
 
-## Neu in v0.3.10
+## Neu in v0.3.11
 
-- Dashboard-Powerbuttons verwenden jetzt die konfigurierten Aktionen `tvon` und `tvoff`
-- „Einschalten“ respektiert dadurch z. B. wirklich **Home 2×** samt Verzögerung
-- „Ausschalten/Standby“ respektiert die pro Gerät gewählte AUS-Methode
-- expliziter MQTT-Anzeigestatus `firetv/<id>/display` mit `ON` / `OFF`
-- ADB-Ziele werden validiert und standardmäßig auf lokale/private Netze begrenzt
-- zusätzliche Eingabevalidierung für Geräte-IDs, Paketnamen und Texteingaben
-- MQTT-Listener gegen ungültige/übergroße Befehle weiter gehärtet
-- fehlende MQTT-Quelländerungsprüfung (`mqtt_source_mtime`) ergänzt
-- Security-Härtungen an Web/API und Konfiguration erweitert
+- Ed25519-Vertrauenskette für künftige Releases erneuert
+- neuer öffentlicher Update-Schlüssel im Secure-Updater hinterlegt
+- Release-Build enthält nun auch `THIRD_PARTY_NOTICES.md`
+- v0.3.10-Funktionsstand einschließlich korrigierter `tvon`-/`tvoff`-Powerbuttons übernommen
+- wegen der Schlüsselrotation ist von Installationen mit dem vorherigen Schlüssel einmalig ein manuelles Update auf v0.3.11 erforderlich
+- nach Installation von v0.3.11 können folgende Releases wieder über die neue signierte Vertrauenskette aktualisiert werden
 
 ## Voraussetzungen
 
@@ -61,7 +58,7 @@ Der übliche ADB-Port ist TCP **5555**. Dieser Port sollte in der Firewall aussc
 
 Fire-TV-Modelle und Fernseher reagieren unterschiedlich auf ADB-Keyevents und HDMI-CEC. Deshalb ist die Methode pro Gerät einstellbar.
 
-Wenn der Fernseher durch zweimaliges Drücken von Home auf der Fire-TV-Fernbedienung zuverlässig eingeschaltet wird, im Plugin **Home 2×** wählen. Der Dashboard-Button „Einschalten“ verwendet ab v0.3.10 exakt diese Geräteeinstellung.
+Wenn der Fernseher durch zweimaliges Drücken von Home auf der Fire-TV-Fernbedienung zuverlässig eingeschaltet wird, im Plugin **Home 2×** wählen. Der Dashboard-Button „Einschalten“ verwendet exakt diese Geräteeinstellung.
 
 Für das Ausschalten stehen **Sleep/Standby** und **Power-Taste** zur Verfügung. Welche Variante den Fernseher tatsächlich per CEC ausschaltet, hängt von Fire TV, Fernseher und deren CEC-Einstellungen ab.
 
@@ -114,7 +111,7 @@ Die vorhandene `config.json` wird vor einem Plugin-Update außerhalb des Plugin-
 
 Die Installationsdatei für diese Version heißt:
 
-`LoxBerry-FireTV-0.3.10.zip`
+`LoxBerry-FireTV-0.3.11.zip`
 
 Installation über die LoxBerry-Pluginverwaltung. Danach Fire TVs automatisch suchen oder manuell anlegen und die einmalige ADB-Autorisierung am Fire TV bestätigen.
 
@@ -122,7 +119,9 @@ Die Paketierung und Syntaxprüfung laufen automatisiert über GitHub Actions.
 
 ## Releases und Autoupdate
 
-Das Repository unterscheidet zwischen aktuellem Entwicklungsstand und **signiert veröffentlichtem GitHub-Release**. `release.cfg` wird erst auf eine neue Version umgestellt, wenn ZIP, SHA-256-Datei und Ed25519-Signatur vollständig als Release vorliegen. Dadurch verweist der LoxBerry-Autoupdater nicht auf unvollständige oder ungeprüfte Release-Dateien.
+`release.cfg` zeigt nur auf vollständig veröffentlichte Releases mit ZIP, SHA-256-Datei und gültiger Ed25519-Signatur. Der Secure-Updater akzeptiert ausschließlich HTTPS-Downloads von freigegebenen GitHub-Hosts und prüft Prüfsumme und Signatur vor dem Speichern.
+
+**Hinweis zur v0.3.11-Schlüsselrotation:** Installationen, die noch den vorherigen öffentlichen Schlüssel eingebaut haben, können die neue Signatur nicht prüfen. Deshalb muss v0.3.11 einmalig manuell installiert werden. Danach funktionieren künftige signierte Updates wieder automatisch mit der neuen Vertrauenskette.
 
 ## Sicherheit
 
@@ -139,7 +138,7 @@ Wichtige Schutzmaßnahmen:
 
 ADB TCP 5555 und MQTT sollten nicht ungeschützt in fremde oder öffentliche Netze freigegeben werden.
 
-Weitere Hinweise: [SECURITY.md](SECURITY.md), [LEGAL.md](LEGAL.md) und [LICENSE](LICENSE).
+Weitere Hinweise: [SECURITY.md](SECURITY.md), [LEGAL.md](LEGAL.md), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) und [LICENSE](LICENSE).
 
 ## Lizenz
 
