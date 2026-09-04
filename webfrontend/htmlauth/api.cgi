@@ -31,7 +31,7 @@ def request_data():
 FOLDER=folder();CFG=os.path.join(root(),'config','plugins',FOLDER,'config.json');BIN=os.path.join(root(),'bin','plugins',FOLDER)
 
 def out(o,code=200):
- print('Status: %d\r\nContent-Type: application/json; charset=utf-8\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\n\r\n'%code,end='');print(json.dumps(o,ensure_ascii=False));raise SystemExit
+ print('Status: %d\r\nContent-Type: application/json; charset=utf-8\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nContent-Security-Policy: default-src \'none\'; frame-ancestors \'none\'; base-uri \'none\'\r\n\r\n'%code,end='');print(json.dumps(o,ensure_ascii=False));raise SystemExit
 
 def csrf(c):
  seed=(os.environ.get('HTTP_COOKIE','')+'|'+os.environ.get('HTTP_USER_AGENT','')).encode();key=str(c.get('web_secret','')).encode();return hmac.new(key,seed,hashlib.sha256).hexdigest()
@@ -49,12 +49,13 @@ def same_site():
 try:c=json.load(open(CFG,encoding='utf-8'))
 except Exception as e:out({'ok':False,'error':'Konfiguration konnte nicht gelesen werden: '+str(e)},500)
 f=request_data();dev=(f.get('device') or '').strip();action=(f.get('action') or 'status').strip().lower();value=f.get('value')
-read_actions={'status','apps'};write_actions={'home','back','up','down','left','right','ok','enter','menu','playpause','stop','next','previous','rewind','fastforward','mute','volumeup','volumedown','wakeup','standby','on','wake','reboot','app','launch','text'}
+read_actions={'status','apps'}
+write_actions={'home','back','up','down','left','right','ok','enter','menu','playpause','stop','next','previous','rewind','fastforward','mute','volumeup','volumedown','wakeup','standby','on','wake','off','tvon','tvoff','tv_on','tv_off','reboot','app','launch','text'}
 if action not in read_actions|write_actions:out({'ok':False,'error':'Ungültiger Befehl.'},400)
 if not dev:
  if action!='status':out({'ok':False,'error':'Gerät fehlt.'},400)
  out({'ok':True,'devices':c.get('devices',[])})
-if len(dev)>128 or re.search(r'[\r\n\x00]',dev):out({'ok':False,'error':'Geräte-ID ungültig.'},400)
+if len(dev)>128 or re.search(r'[\r\n\x00/]',dev):out({'ok':False,'error':'Geräte-ID ungültig.'},400)
 if action in write_actions:
  same_site()
  if os.environ.get('REQUEST_METHOD','GET').upper()!='POST':out({'ok':False,'error':'Schaltbefehle sind nur per POST erlaubt.'},405)
