@@ -1,0 +1,177 @@
+name: Release
+
+# Baut, signiert und veröffentlicht ein Plugin-Release, sobald ein Tag "v*" gepusht wird.
+#
+# Einmalig einzurichten:
+#   Settings > Secrets and variables > Actions > New repository secret
+#   Name:  ED25519_PRIVATE_KEY
+#   Wert:  Inhalt der privaten Schlüsseldatei im PEM-Format
+#          (-----BEGIN PRIVATE KEY----- ... -----END PRIVATE KEY-----)
+#
+# Auslösen:
+#   git tag v0.3.12 && git push origin v0.3.12
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version ohne v, z. B. 0.3.12 (erzeugt einen Entwurf)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v4
+
+      - name: Version bestimmen
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+            echo "draft=true" >> "$GITHUB_OUTPUT"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+            echo "draft=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "zip=LoxBerry-FireTV-$VERSION.zip" >> "$GITHUB_OUTPUT"
+          echo "Release-Version: $VERSION"
+
+      - name: Versionsangaben im Repo prüfen
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          CFGVER="$(sed -n 's/^VERSION=//p' plugin.cfg | head -1)"
+          if [ "$CFGVER" != "$VERSION" ]; then
+            echo "::error::plugin.cfg sagt $CFGVER, das Release ist $VERSION."
+            exit 1
+          fi
+          if ! grep -q "^VERSION=${VERSION}$" release.cfg; then
+            echo "::error::release.cfg zeigt nicht auf $VERSION."
+            exit 1
+          fi
+          if ! grep -q "^ARCHIVEURL=.*/v${VERSION}/LoxBerry-FireTV-${VERSION}.zip$" release.cfg; then
+            echo "::error::ARCHIVEURL in release.cfg passt nicht zu $VERSION."
+            exit 1
+          fi
+          echo "plugin.cfg und release.cfg stimmen überein."
+
+      - name: Syntaxprüfung
+        run: |
+          fail=0
+          for f in $(find . -path ./.git -prune -o \( -name '*.py' -o -name '*.cgi' \) -print); do
+            head -1 "$f" | grep -q perl && continue
+            python3 -m py_compile "$f" || { echo "::error file=$f::Python-Syntaxfehler"; fail=1; }
+          done
+          for f in $(find . -path ./.git -prune -o -name '*.sh' -print) daemon/daemon cron/cron.01min; do
+            bash -n "$f" || { echo "::error file=$f::Bash-Syntaxfehler"; fail=1; }
+          done
+          python3 -c "import json;json.load(open('config/config.default.json'))" \
+            || { echo "::error::config.default.json ist kein gültiges JSON"; fail=1; }
+          exit $fail
+
+      - name: Plugin-ZIP bauen
+        env:
+          ZIP: ${{ steps.ver.outputs.zip }}
+        run: |
+          mkdir -p build/pkg dist
+          git archive --format=tar HEAD | tar -x -C build/pkg
+          # Entwicklungsdateien gehören nicht ins Plugin-Paket
+          rm -rf build/pkg/.github build/pkg/.gitattributes build/pkg/.gitignore \
+                 build/pkg/publish-release.sh build/pkg/tests
+          find build/pkg -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null || true
+          chmod 755 $(find build/pkg \( -name '*.py' -o -name '*.cgi' -o -name '*.sh' \)) \
+                    build/pkg/daemon/daemon build/pkg/cron/cron.01min
+          ( cd build/pkg && zip -qr "../../dist/$ZIP" . )
+          echo "Größe: $(stat -c%s "dist/$ZIP") Bytes"
+          unzip -l "dist/$ZIP" | tail -3
+
+      - name: Schlüsselpaar gegen update_public_key.hex prüfen
+        env:
+          KEY: ${{ secrets.ED25519_PRIVATE_KEY }}
+        run: |
+          if [ -z "$KEY" ]; then
+            echo "::error::Secret ED25519_PRIVATE_KEY fehlt."
+            exit 1
+          fi
+          umask 077
+          printf '%s\n' "$KEY" > /tmp/release.pem
+          PUB_FILE="$(tr -d '[:space:]' < bin/update_public_key.hex)"
+          PUB_KEY="$(openssl pkey -in /tmp/release.pem -pubout -outform DER | tail -c 32 | od -An -v -tx1 | tr -d ' \n')"
+          if [ "$PUB_FILE" != "$PUB_KEY" ]; then
+            echo "::error::Privater Schlüssel passt nicht zu bin/update_public_key.hex."
+            echo "Datei:      $PUB_FILE"
+            echo "Schlüssel:  $PUB_KEY"
+            exit 1
+          fi
+          echo "Schlüsselpaar passt zum eingebauten Public Key."
+
+      - name: Prüfsumme und Signatur erzeugen
+        env:
+          ZIP: ${{ steps.ver.outputs.zip }}
+        run: |
+          ( cd dist && sha256sum "$ZIP" > "$ZIP.sha256" )
+          openssl pkeyutl -sign -rawin -inkey /tmp/release.pem -in "dist/$ZIP" -out /tmp/sig.bin
+          base64 -w0 /tmp/sig.bin > "dist/$ZIP.sig"
+          echo "SHA256: $(cut -d' ' -f1 "dist/$ZIP.sha256")"
+
+      - name: Signatur mit dem echten Updater gegenprüfen
+        env:
+          ZIP: ${{ steps.ver.outputs.zip }}
+        run: |
+          python3 - "dist/$ZIP" "dist/$ZIP.sig" <<'PY'
+          import base64, importlib.util, sys
+          spec = importlib.util.spec_from_file_location('su', 'bin/secure_update.py')
+          m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+          blob = open(sys.argv[1], 'rb').read()
+          sig = base64.b64decode(open(sys.argv[2]).read().strip(), validate=True)
+          if not m.verify(sig, blob, m.public_key()):
+              print('::error::Selbstprüfung der Signatur fehlgeschlagen'); sys.exit(1)
+          print('Signatur wird vom Secure-Updater akzeptiert.')
+          PY
+
+      - name: Schlüssel entfernen
+        if: always()
+        run: shred -u /tmp/release.pem 2>/dev/null || rm -f /tmp/release.pem
+
+      - name: Release-Notes aus CHANGELOG.md ziehen
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          awk -v v="$VERSION" '
+            $0 ~ "^## \\[?" v "\\]?" {f=1; next}
+            /^## / {f=0}
+            f' CHANGELOG.md > /tmp/notes.md
+          [ -s /tmp/notes.md ] || echo "Siehe CHANGELOG.md" > /tmp/notes.md
+          cat /tmp/notes.md
+
+      - name: Release veröffentlichen
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.ver.outputs.version }}
+          ZIP: ${{ steps.ver.outputs.zip }}
+          DRAFT: ${{ steps.ver.outputs.draft }}
+        run: |
+          ARGS=""
+          [ "$DRAFT" = "true" ] && ARGS="--draft"
+          gh release create "v$VERSION" \
+            "dist/$ZIP" "dist/$ZIP.sha256" "dist/$ZIP.sig" \
+            --title "Fire TV Control $VERSION" \
+            --notes-file /tmp/notes.md \
+            $ARGS
+
+      - name: Hinweis
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          echo "### Release v$VERSION veröffentlicht" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Bestehende Installationen sehen das Update erst, wenn release.cfg auf **main** ebenfalls auf $VERSION zeigt." >> "$GITHUB_STEP_SUMMARY"
