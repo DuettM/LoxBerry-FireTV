@@ -2,7 +2,7 @@
 
 LoxBerry-Plugin zur Abfrage und Steuerung eines oder mehrerer Amazon Fire TV / Fire TV Stick Geräte per Netzwerk-ADB.
 
-Aktueller Entwicklungsstand: **v0.3.12**.
+Aktueller Entwicklungsstand: **v0.3.13**.
 
 > Unabhängiges Community-Projekt. Nicht mit Amazon, Fire TV, LoxBerry oder Loxone verbunden oder von diesen unterstützt.
 
