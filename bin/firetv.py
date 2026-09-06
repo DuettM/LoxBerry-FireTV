@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import argparse,ipaddress,json,os,re,socket,struct,subprocess,sys,time
+import argparse,ipaddress,json,os,re,shlex,socket,struct,subprocess,sys,time
 
 KEYS={"home":3,"back":4,"up":19,"down":20,"left":21,"right":22,"ok":23,"enter":66,"menu":82,"playpause":85,"stop":86,"next":87,"previous":88,"rewind":89,"fastforward":90,"mute":164,"volumeup":24,"volumedown":25,"wakeup":224,"sleep":223,"power":26}
 APP_PRESETS={"prime":"com.amazon.firebat","primevideo":"com.amazon.firebat","netflix":"com.netflix.ninja","youtube":"com.amazon.firetv.youtube","disney":"com.disney.disneyplus","disneyplus":"com.disney.disneyplus","spotify":"com.spotify.tv.android"}
@@ -11,6 +11,27 @@ def plugin_root():
     if not root:raise RuntimeError("LBHOMEDIR/LBHOME ist nicht gesetzt")
     return root
 def general_json():return os.path.join(plugin_root(),"config","system","general.json")
+SCREEN_METHODS=[("auto","Automatisch (bevorzugt Display Power)"),
+                ("display","Display Power: state=ON"),
+                ("suspendblocker","mHoldingDisplaySuspendBlocker=true"),
+                ("display_or_blocker","Display Power oder Suspend Blocker"),
+                ("wakefulness","mWakefulness=Awake")]
+def screen_values(power):
+    """Die drei Rohwerte aus dumpsys power. None = Zeile nicht vorhanden."""
+    w=True if re.search(r"mWakefulness\s*=\s*Awake",power,re.I) else (False if re.search(r"mWakefulness\s*=",power,re.I) else None)
+    m=re.search(r"Display Power:\s*state\s*=\s*(\w+)",power,re.I);d=(m.group(1).upper()=="ON") if m else None
+    m=re.search(r"mHoldingDisplaySuspendBlocker\s*=\s*(\w+)",power,re.I);b=(m.group(1).lower()=="true") if m else None
+    return {"wakefulness":w,"display":d,"suspendblocker":b}
+def screen_from_power(power,method="auto"):
+    v=screen_values(power);method=str(method or "auto").lower()
+    if method in ("wakefulness","display","suspendblocker"):return bool(v[method])
+    if method=="display_or_blocker":return bool(v["display"]) or bool(v["suspendblocker"])
+    # auto: Display Power ist am aussagekraeftigsten, dann der Suspend Blocker,
+    # Wakefulness nur als letzter Ausweg - ein Fire TV Stick bleibt oft wach,
+    # obwohl der Fernseher laengst aus ist.
+    for k in ("display","suspendblocker","wakefulness"):
+        if v[k] is not None:return bool(v[k])
+    return False
 def base_topic(cfg):return str(cfg.get("mqtt",{}).get("base_topic","firetv") or "firetv").strip().strip("/")
 def slug(s):
     s=re.sub(r"[^a-zA-Z0-9_-]+","-",str(s).strip().lower()).strip("-")
@@ -26,10 +47,35 @@ def mqtt_source_mtime(cfg):
 def log_path(cfg):
     cp=cfg.get("_config_path","");folder=os.path.basename(os.path.dirname(cp)) if cp else "firetv"
     return os.path.join(plugin_root(),"log","plugins",folder,"firetv.log")
+LOG_LEVELS={"emerg":0,"alert":1,"critical":2,"error":3,"warning":4,"notice":5,"info":6,"debug":7}
+LOG_MAX_BYTES=1048576
+_LOGLEVEL_CACHE={}
+def plugin_loglevel(cfg):
+    """LoxBerry-Loglevel des Plugins ermitteln (einmal je Prozess gecacht)."""
+    cp=cfg.get("_config_path","")
+    if cp in _LOGLEVEL_CACHE:return _LOGLEVEL_CACHE[cp]
+    lvl=6
+    try:
+        folder=os.path.basename(os.path.dirname(cp)) if cp else "firetv"
+        db=load_json(os.path.join(plugin_root(),"data","system","plugindatabase.json"))
+        for p in db.get("plugins",[]):
+            if str(p.get("folder",""))==folder or str(p.get("name",""))=="firetv":lvl=int(p.get("loglevel",6));break
+    except Exception:pass
+    _LOGLEVEL_CACHE[cp]=lvl;return lvl
+def rotate_log(path):
+    try:
+        if os.path.getsize(path)>LOG_MAX_BYTES:
+            os.replace(path,path+".1")
+            try:os.chmod(path+".1",0o600)
+            except Exception:pass
+    except OSError:pass
 def debug_log(cfg,level,msg):
     try:
-        p=log_path(cfg);os.makedirs(os.path.dirname(p),exist_ok=True)
+        if LOG_LEVELS.get(str(level).lower(),6)>plugin_loglevel(cfg):return
+        p=log_path(cfg);os.makedirs(os.path.dirname(p),exist_ok=True);rotate_log(p)
         with open(p,"a",encoding="utf-8") as f:f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} [{str(level).upper()}] {msg}\n")
+        try:os.chmod(p,0o600)
+        except Exception:pass
     except Exception:pass
 def _enc_len(n):
     out=b""
@@ -40,29 +86,75 @@ def _enc_len(n):
         if not n:return out
 def _mstr(v):
     b=str(v).encode();return struct.pack("!H",len(b))+b
-def mqtt_publish(cfg,topic,payload,retain=False):
-    if not cfg.get("mqtt",{}).get("enabled",True):return False
-    mc=mqtt_connection_config(cfg);s=None
-    try:
-        cid=f"lb-firetv-pub-{os.getpid()}";flags=2;pl=_mstr(cid)
+def _recv_exact(s,n):
+    b=b""
+    while len(b)<n:
+        x=s.recv(n-len(b))
+        if not x:raise ConnectionError("MQTT Verbindung geschlossen")
+        b+=x
+    return b
+class MqttSession:
+    """Eine MQTT-Verbindung für beliebig viele Publishes (statt einer Verbindung je Topic)."""
+    def __init__(self,cfg):self.cfg=cfg;self.s=None;self.failed=False
+    def _open(self):
+        mc=mqtt_connection_config(self.cfg);cid=f"lb-firetv-pub-{os.getpid()}";flags=2;pl=_mstr(cid)
         if mc.get("username"):
             flags|=0x80;pl+=_mstr(mc["username"])
             if mc.get("password") is not None:flags|=0x40;pl+=_mstr(mc.get("password",""))
-        vh=_mstr("MQTT")+bytes([4,flags])+struct.pack("!H",20)
-        s=socket.create_connection((mc["host"],int(mc["port"])),timeout=4);s.sendall(bytes([0x10])+_enc_len(len(vh)+len(pl))+vh+pl);s.recv(4)
-        body=_mstr(topic)+str(payload).encode();s.sendall(bytes([0x31 if retain else 0x30])+_enc_len(len(body))+body);s.sendall(b"\xe0\x00");return True
-    except Exception as e:debug_log(cfg,"warning",f"MQTT publish fehlgeschlagen: {e}");return False
-    finally:
+        vh=_mstr("MQTT")+bytes([4,flags])+struct.pack("!H",30)
+        s=socket.create_connection((mc["host"],int(mc["port"])),timeout=4);s.settimeout(4)
+        s.sendall(bytes([0x10])+_enc_len(len(vh)+len(pl))+vh+pl)
+        h=_recv_exact(s,1)[0];rem=0;mul=1
+        for _ in range(4):
+            d=_recv_exact(s,1)[0];rem+=(d&127)*mul
+            if not d&128:break
+            mul*=128
+        body=_recv_exact(s,rem) if rem else b""
+        if h>>4!=2 or len(body)<2 or body[1]!=0:
+            try:s.close()
+            except Exception:pass
+            raise RuntimeError(f"MQTT CONNACK abgelehnt (Code {body[1] if len(body)>1 else '?'})")
+        self.s=s
+    def publish(self,topic,payload,retain=False):
+        if not self.cfg.get("mqtt",{}).get("enabled",True) or self.failed:return False
         try:
-            if s:s.close()
+            if self.s is None:self._open()
+            body=_mstr(topic)+str(payload).encode()
+            self.s.sendall(bytes([0x31 if retain else 0x30])+_enc_len(len(body))+body);return True
+        except Exception as e:
+            self.failed=True;self.close()
+            debug_log(self.cfg,"warning",f"MQTT publish fehlgeschlagen: {e}");return False
+    def close(self):
+        s,self.s=self.s,None
+        if not s:return
+        try:
+            s.sendall(b"\xe0\x00");s.shutdown(socket.SHUT_WR)
         except Exception:pass
+        try:s.close()
+        except Exception:pass
+    def __enter__(self):return self
+    def __exit__(self,*_):self.close();return False
+def mqtt_publish(cfg,topic,payload,retain=False):
+    with MqttSession(cfg) as m:return m.publish(topic,payload,retain)
 def mqtt_event(cfg,suffix,data,retain=False):
     payload=data if isinstance(data,str) else json.dumps(data,ensure_ascii=False,separators=(",",":"))
     return mqtt_publish(cfg,base_topic(cfg)+"/"+suffix,payload,retain)
 
+def resolve_host(value):
+    """Hostnamen zu einer IP auflösen; IP-Adressen werden unverändert zurückgegeben."""
+    v=str(value).strip()
+    try:return str(ipaddress.ip_address(v))
+    except ValueError:pass
+    if not re.fullmatch(r"[A-Za-z0-9._-]{1,253}",v):raise ValueError("Ungültige Fire-TV-Adresse")
+    try:infos=socket.getaddrinfo(v,None,type=socket.SOCK_STREAM)
+    except OSError:raise ValueError(f"Hostname konnte nicht aufgelöst werden: {v}")
+    for fam in (socket.AF_INET,socket.AF_INET6):
+        for i in infos:
+            if i[0]==fam:return i[4][0]
+    raise ValueError(f"Hostname konnte nicht aufgelöst werden: {v}")
 def validate_adb_target(cfg,ip,port):
-    try:addr=ipaddress.ip_address(str(ip).strip())
-    except ValueError:raise ValueError("Ungültige Fire-TV-IP-Adresse")
+    try:addr=ipaddress.ip_address(resolve_host(ip))
+    except ValueError as e:raise ValueError(str(e) if "aufgelöst" in str(e) or "Ungültige Fire-TV-Adresse" in str(e) else "Ungültige Fire-TV-IP-Adresse")
     if addr.is_multicast or addr.is_unspecified:raise ValueError("Unsichere Fire-TV-IP-Adresse")
     if cfg.get("security",{}).get("private_adb_only",True) and not (addr.is_private or addr.is_loopback or addr.is_link_local):
         raise ValueError("ADB-Ziel außerhalb des privaten Netzes blockiert")
@@ -73,7 +165,7 @@ def validate_adb_target(cfg,ip,port):
 
 class FireTV:
     def __init__(self,cfg,device):
-        self.cfg=cfg;self.device=device;self.ip,self.port=validate_adb_target(cfg,device.get("ip",""),device.get("port",5555));self.target=f"{self.ip}:{self.port}";self.timeout=max(2,min(30,int(cfg.get("adb_timeout",8))))
+        self.cfg=cfg;self.device=device;self.ip,self.port=validate_adb_target(cfg,device.get("ip",""),device.get("port",5555));self.target=f"{self.ip}:{self.port}";self.timeout=max(2,min(30,int(cfg.get("adb_timeout",8))));self._conn=None
     def _run(self,args):
         try:p=subprocess.run(args,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=self.timeout,check=False)
         except FileNotFoundError:raise RuntimeError("ADB ist nicht installiert")
@@ -88,10 +180,15 @@ class FireTV:
         for line in devs.splitlines():
             if line.startswith(self.target+"\t"):return line.split("\t",1)[1].strip().lower(),devs
         return "disconnected",out or devs
-    def connect(self):
+    def connect(self,force=False):
+        """Verbindungszustand ermitteln. Ergebnis wird je Instanz gecacht, damit ein
+        status()-Aufruf nicht für jedes Shell-Kommando erneut adb connect/get-state startet."""
+        if self._conn is not None and not force and self._conn.get("ok"):return self._conn
         _,out=self._run(["adb","connect",self.target]);state,detail=self._state();msg=(out+" | "+detail).strip(" |")
-        return {"ok":state=="device","authorized":state=="device","state":state,"message":msg}
+        self._conn={"ok":state=="device","authorized":state=="device","state":state,"message":msg}
+        return self._conn
     def reconnect(self):
+        self._conn=None
         try:self._run(["adb","disconnect",self.target])
         except Exception:pass
         time.sleep(.35);_,out=self._run(["adb","connect",self.target]);time.sleep(.35);state,detail=self._state();debug_log(self.cfg,"info",f"ADB reconnect {self.target}: {state}");msg=(out+" | "+detail).strip(" |")
@@ -105,11 +202,13 @@ class FireTV:
             if c.get("state")=="unauthorized":raise RuntimeError("ADB nicht autorisiert – Verbindung am Fire TV bestätigen")
             raise RuntimeError(c.get("message") or "ADB nicht verbunden")
         rc,out=self._run(["adb","-s",self.target,"shell",*map(str,args)]);low=out.lower()
-        if "unauthorized" in low:raise RuntimeError("ADB nicht autorisiert – Verbindung am Fire TV bestätigen")
-        if "no devices" in low or "offline" in low or "not found" in low:raise RuntimeError(out)
+        if "unauthorized" in low:self._conn=None;raise RuntimeError("ADB nicht autorisiert – Verbindung am Fire TV bestätigen")
+        if "no devices" in low or "offline" in low or "not found" in low:self._conn=None;raise RuntimeError(out)
         return out
     def key(self,key):
-        k=str(key).lower();code=KEYS.get(k,k);self.shell("input","keyevent",str(code));return {"ok":True,"action":k}
+        k=str(key).lower();code=KEYS.get(k)
+        if code is None:raise ValueError("Unbekannte Taste: "+k)
+        self.shell("input","keyevent",str(code));return {"ok":True,"action":k}
     def volume(self,direction):
         d=str(direction).lower();adj={"volumeup":"raise","volumedown":"lower","mute":"toggle"}.get(d)
         if not adj:raise ValueError("Ungültige Lautstärkeaktion")
@@ -151,12 +250,28 @@ class FireTV:
         c=self.connect();r["adb_message"]=c["message"];r["adb_state"]=c.get("state");r["authorized"]=bool(c["authorized"])
         if not c["ok"]:return r
         try:
-            r["online"]=True;r["model"]=self.shell("getprop","ro.product.model").strip();r["manufacturer"]=self.shell("getprop","ro.product.manufacturer").strip();r["android"]=self.shell("getprop","ro.build.version.release").strip();r["build"]=self.shell("getprop","ro.build.version.incremental").strip();power=self.shell("dumpsys","power");r["awake"]=bool(re.search(r"mWakefulness=Awake|Display Power: state=ON|state=ON",power,re.I));win=self.shell("dumpsys","window","windows");m=re.search(r"mCurrentFocus=.*?\s([A-Za-z0-9._]+)/(?:[A-Za-z0-9._$]+)",win)
+            r["online"]=True;r["model"]=self.shell("getprop","ro.product.model").strip();r["manufacturer"]=self.shell("getprop","ro.product.manufacturer").strip();r["android"]=self.shell("getprop","ro.build.version.release").strip();r["build"]=self.shell("getprop","ro.build.version.incremental").strip();power=self.shell("dumpsys","power");r["awake"]=screen_from_power(power,self.cfg.get("screen_detect","auto"));win=self.shell("dumpsys","window","windows");m=re.search(r"mCurrentFocus=.*?\s([A-Za-z0-9._]+)/(?:[A-Za-z0-9._$]+)",win)
             if not m:
                 act=self.shell("dumpsys","activity","activities");m=re.search(r"mResumedActivity:.*?\s([A-Za-z0-9._]+)/",act)
             r["app"]=m.group(1) if m else ""
         except Exception as e:r["error"]=str(e)
         return r
+    def screen(self):
+        """Nur den Bildschirmzustand abfragen - ein einziger adb-Aufruf,
+        deutlich schneller als der vollstaendige status()."""
+        power=self.shell("dumpsys","power")
+        return screen_from_power(power,self.cfg.get("screen_detect","auto"))
+    def power_dump(self):
+        """Rohdaten zur Bildschirmerkennung - fuer die Diagnose in der Oberflaeche."""
+        power=self.shell("dumpsys","power")
+        keys=("mWakefulness","Display Power","mHoldingDisplaySuspendBlocker","mHoldingWakeLockSuspendBlocker",
+              "mScreenOn","mScreenBrightness","Dream","mDreaming","mIsPowered","mWakeLockSummary","mUserActivitySummary")
+        hits=[l.strip() for l in power.splitlines() if any(k.lower() in l.lower() for k in keys)]
+        cur=str(self.cfg.get("screen_detect","auto"))
+        return {"ok":True,"action":"powerdump","method":cur,"awake":screen_from_power(power,cur),
+                "values":screen_values(power),
+                "methods":[{"id":k,"label":l,"awake":screen_from_power(power,k)} for k,l in SCREEN_METHODS],
+                "lines":hits[:60]}
     def list_apps(self):
         out=self.shell("pm","list","packages");return sorted({x.split(":",1)[1].strip() for x in out.splitlines() if x.startswith("package:")})
     def command(self,action,value=None):
@@ -164,6 +279,7 @@ class FireTV:
         if a=="status":return self.status()
         if a in ("reconnect","adb_reconnect"):return self.reconnect()
         if a in ("cecdiag","cec_diagnostics"):return self.cec_diagnostics()
+        if a in ("powerdump","screendiag"):return self.power_dump()
         if a in ("volumeup","volumedown","mute"):return self.volume(a)
         if a in KEYS:return self.key(a)
         if a=="standby":return self.key("sleep")
@@ -176,8 +292,11 @@ class FireTV:
         if a=="text":
             if value is None:raise ValueError("Text fehlt")
             v=str(value)
-            if len(v)>512 or any(ord(ch)<32 and ch not in "\t" for ch in v):raise ValueError("Ungültiger Text")
-            self.shell("input","text",v.replace(" ","%s"));return {"ok":True,"action":"text"}
+            if len(v)>512 or any(ord(ch)<32 or ord(ch)==127 for ch in v):raise ValueError("Ungültiger Text")
+            # adb shell übergibt die Argumente an die Shell des Fire TV. Der Text muss
+            # deshalb zwingend gequotet werden, sonst sind ";", "|" oder "$(...)"
+            # ausführbare Befehle auf dem Gerät.
+            self.shell("input","text",shlex.quote(v.replace(" ","%s")));return {"ok":True,"action":"text"}
         if a=="apps":return {"ok":True,"apps":self.list_apps()}
         raise ValueError("Unbekannter Befehl: "+a)
 
@@ -188,7 +307,14 @@ def find_device(cfg,ident):
         if ident in (str(d.get("id","")),slug(d.get("id","")),slug(d.get("name","")),str(d.get("ip",""))):return d
     raise KeyError("Fire TV nicht gefunden: "+ident)
 def publish_status(cfg,st):
-    b=base_topic(cfg)+"/"+st["id"];ret=bool(cfg.get("mqtt",{}).get("retain_state",True));mqtt_publish(cfg,b+"/online","1" if st.get("online") else "0",ret);mqtt_publish(cfg,b+"/authorized","1" if st.get("authorized") else "0",ret);mqtt_publish(cfg,b+"/awake","1" if st.get("awake") else "0",ret);mqtt_publish(cfg,b+"/display","ON" if st.get("awake") else "OFF",ret);mqtt_publish(cfg,b+"/app",st.get("app",""),ret);mqtt_publish(cfg,b+"/state",json.dumps(st,ensure_ascii=False,separators=(",",":")),ret)
+    b=base_topic(cfg)+"/"+st["id"];ret=bool(cfg.get("mqtt",{}).get("retain_state",True))
+    with MqttSession(cfg) as m:
+        m.publish(b+"/online","1" if st.get("online") else "0",ret)
+        m.publish(b+"/authorized","1" if st.get("authorized") else "0",ret)
+        m.publish(b+"/awake","1" if st.get("awake") else "0",ret)
+        m.publish(b+"/display","ON" if st.get("awake") else "OFF",ret)
+        m.publish(b+"/app",st.get("app",""),ret)
+        m.publish(b+"/state",json.dumps(st,ensure_ascii=False,separators=(",",":")),ret)
 def main():
     ap=argparse.ArgumentParser();ap.add_argument("--config",required=True);ap.add_argument("--device");ap.add_argument("--action",default="status");ap.add_argument("--value");ap.add_argument("--poll-all",action="store_true");a=ap.parse_args();cfg=load_json(a.config);cfg["_config_path"]=a.config
     if a.poll_all:

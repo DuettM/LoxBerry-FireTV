@@ -17,11 +17,11 @@ Wichtige Schutzmaßnahmen im Plugin:
 - MQTT-Befehls-Whitelist
 - `reboot` und freie Texteingabe standardmäßig gesperrt
 - optionale zusätzliche MQTT-Befehlstoken-Prüfung
-- Begrenzung von MQTT-Payload- und Eingabelängen
+- Begrenzung von MQTT-Paket-, Payload- und Eingabelängen
+- Quoting aller an `adb shell` übergebenen Benutzerwerte
 - Validierung von Geräte-IDs, Paketnamen, IP-Adressen und ADB-Ports
 - ADB-Ziele standardmäßig nur in lokalen/privaten Netzen
 - restriktive Dateirechte für Konfiguration und Logs
-- SHA-256- und Ed25519-Prüfung für den vorgesehenen signierten Updatepfad
 
 ## Netzwerkempfehlungen
 
@@ -53,8 +53,10 @@ Nur Systeme, Geräte und Accounts testen, die dir gehören oder für deren Test 
 
 ## Zugangsdaten und Schlüssel
 
-Werden Passwörter, Tokens, Cookies oder private Signierschlüssel versehentlich veröffentlicht, gelten sie als kompromittiert und müssen umgehend rotiert bzw. widerrufen werden. Das nachträgliche Löschen aus Git allein reicht nicht aus.
+Werden Passwörter, Tokens oder Cookies versehentlich veröffentlicht, gelten sie als kompromittiert und müssen umgehend rotiert bzw. widerrufen werden. Das nachträgliche Löschen aus Git allein reicht nicht aus.
 
 ## Release-Baseline
 
-Vor einem öffentlichen Release sollten mindestens Syntax-/Build-Prüfungen, Secret-Scanning, Lizenz-/Abhängigkeitsprüfung und der LoxBerry-Sicherheitscheck durchgeführt werden. Der signierte Releasepfad darf nur verwendet werden, wenn ZIP, SHA-256 und Signatur vollständig zusammenpassen.
+Vor einem öffentlichen Release sollten mindestens Syntax-/Build-Prüfungen, Secret-Scanning, Lizenz-/Abhängigkeitsprüfung und der LoxBerry-Sicherheitscheck durchgeführt werden. Zu jedem Release wird eine SHA-256-Prüfsumme veröffentlicht.
+
+Das Plugin prüft eingehende Updates nicht kryptografisch. Das LoxBerry-Autoupdate lädt das ZIP über HTTPS aus dem offiziellen Repository; die Vertrauensgrundlage sind HTTPS und der Zugriffsschutz des GitHub-Kontos, nicht eine Signatur im Plugin.

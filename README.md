@@ -2,7 +2,7 @@
 
 LoxBerry-Plugin zur Abfrage und Steuerung eines oder mehrerer Amazon Fire TV / Fire TV Stick Geräte per Netzwerk-ADB.
 
-Aktueller Entwicklungsstand: **v0.3.11**.
+Aktueller Entwicklungsstand: **v0.3.12**.
 
 > Unabhängiges Community-Projekt. Nicht mit Amazon, Fire TV, LoxBerry oder Loxone verbunden oder von diesen unterstützt.
 
@@ -26,16 +26,19 @@ Aktueller Entwicklungsstand: **v0.3.11**.
 - JSON-API und Debug-/Log-Seite
 - nativer LoxBerry-Webrahmen mit `LoxBerry::Web::lbheader()` / `lbfooter()`
 - updatefeste Benutzerkonfiguration mit Backup/Restore und Default-Merge
-- sichere Update-Prüfung mit SHA-256 und Ed25519 für signierte Releases
+- API-Key für Schaltbefehle aus Loxone/Skripten
 
-## Neu in v0.3.11
+## Neu in v0.3.12
 
-- Ed25519-Vertrauenskette für künftige Releases erneuert
-- neuer öffentlicher Update-Schlüssel im Secure-Updater hinterlegt
-- Release-Build enthält nun auch `THIRD_PARTY_NOTICES.md`
-- v0.3.10-Funktionsstand einschließlich korrigierter `tvon`-/`tvoff`-Powerbuttons übernommen
-- wegen der Schlüsselrotation ist von Installationen mit dem vorherigen Schlüssel einmalig ein manuelles Update auf v0.3.11 erforderlich
-- nach Installation von v0.3.11 können folgende Releases wieder über die neue signierte Vertrauenskette aktualisiert werden
+- Texteingabe wird vor der Übergabe an `adb shell` gequotet
+- MQTT-Listener läuft auch nach einem Watchdog-Neustart als Benutzer `loxberry`
+- API-Key für Schaltbefehle aus Loxone oder Skripten
+- Seite „Loxone" mit fertiger MQTT-Vorlage für virtuelle Ausgänge zum Download
+- Statusabfrage und MQTT-Veröffentlichung deutlich schlanker
+- Bildschirmzustand wird sekundengenau über MQTT gemeldet
+- Security Center mit Navigation auf Mobilgeräten und farbig markierter Auswahl
+- Versionsanzeige zeigt die tatsächlich installierte Version
+- Ed25519-Signaturprüfung entfernt, da sie nicht im Updatepfad eingebunden war
 
 ## Voraussetzungen
 
@@ -119,9 +122,15 @@ Die Paketierung und Syntaxprüfung laufen automatisiert über GitHub Actions.
 
 ## Releases und Autoupdate
 
-`release.cfg` zeigt nur auf vollständig veröffentlichte Releases mit ZIP, SHA-256-Datei und gültiger Ed25519-Signatur. Der Secure-Updater akzeptiert ausschließlich HTTPS-Downloads von freigegebenen GitHub-Hosts und prüft Prüfsumme und Signatur vor dem Speichern.
+`release.cfg` zeigt auf das jeweils aktuelle Release. Das LoxBerry-Autoupdate lädt das dort hinterlegte ZIP über HTTPS von GitHub und installiert es.
 
-**Hinweis zur v0.3.11-Schlüsselrotation:** Installationen, die noch den vorherigen öffentlichen Schlüssel eingebaut haben, können die neue Signatur nicht prüfen. Deshalb muss v0.3.11 einmalig manuell installiert werden. Danach funktionieren künftige signierte Updates wieder automatisch mit der neuen Vertrauenskette.
+Zu jedem Release wird zusätzlich eine `.sha256`-Datei veröffentlicht. Wer die Installationsdatei von Hand herunterlädt, kann sie damit prüfen:
+
+```
+sha256sum -c LoxBerry-FireTV-<version>.zip.sha256
+```
+
+Eine Signaturprüfung findet nicht statt. Die Integrität des Downloads beruht auf HTTPS und darauf, dass das Release aus dem offiziellen Repository stammt.
 
 ## Sicherheit
 
@@ -134,7 +143,7 @@ Wichtige Schutzmaßnahmen:
 - Reboot und freie Texteingabe standardmäßig gesperrt
 - optionale MQTT-Befehlstoken-Prüfung
 - ADB-Zielvalidierung und private/local-only Standard
-- SHA-256 + Ed25519 für den sicheren Release-Updatepfad
+- SHA-256-Prüfsumme zu jedem Release für die manuelle Kontrolle
 
 ADB TCP 5555 und MQTT sollten nicht ungeschützt in fremde oder öffentliche Netze freigegeben werden.
 

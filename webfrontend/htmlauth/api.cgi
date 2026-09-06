@@ -56,10 +56,16 @@ if not dev:
  if action!='status':out({'ok':False,'error':'Gerät fehlt.'},400)
  out({'ok':True,'devices':c.get('devices',[])})
 if len(dev)>128 or re.search(r'[\r\n\x00/]',dev):out({'ok':False,'error':'Geräte-ID ungültig.'},400)
+def api_key_ok(c,f):
+ """Alternative zum Browser-CSRF-Token: fester API-Key für Loxone/Skripte.
+ Der CSRF-Token hängt am Session-Cookie und ist von einem Miniserver nicht erzeugbar."""
+ k=str(c.get('web_api_key','') or '');sent=os.environ.get('HTTP_X_FIRETV_KEY','') or str(f.get('apikey','') or '')
+ return bool(k) and bool(sent) and hmac.compare_digest(k,sent)
 if action in write_actions:
- same_site()
  if os.environ.get('REQUEST_METHOD','GET').upper()!='POST':out({'ok':False,'error':'Schaltbefehle sind nur per POST erlaubt.'},405)
- require_csrf(c)
+ if not api_key_ok(c,f):
+  same_site()
+  require_csrf(c)
 if value is not None and (len(value)>512 or '\x00' in value):out({'ok':False,'error':'Wert ungültig.'},400)
 cmd=[os.path.join(BIN,'firetv.py'),'--config',CFG,'--device',dev,'--action',action]
 if value is not None:cmd+=['--value',value]

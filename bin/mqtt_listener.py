@@ -21,12 +21,14 @@ def recv_exact(s,n):
   if not x:raise ConnectionError('MQTT Verbindung geschlossen')
   b+=x
  return b
+MAX_PACKET=65536
 def recv_packet(s):
  f=recv_exact(s,1)[0];mul=1;rem=0
  for _ in range(4):
   d=recv_exact(s,1)[0];rem+=(d&127)*mul
   if not d&128:break
   mul*=128
+ if rem>MAX_PACKET:raise ValueError('MQTT Paket zu groß (%d Bytes)'%rem)
  return f,recv_exact(s,rem) if rem else b''
 class Client:
  def __init__(self,c):self.c=c;self.s=None;self.pid=1
@@ -64,6 +66,27 @@ def token_ok(cfg,sent):
  if not m.get('command_token_required',False):return True
  expected=str(m.get('command_token',''))
  return bool(expected and sent and hmac.compare_digest(expected,str(sent)))
+def screen_watch(cfg,core,c,base,state,nexttry):
+ """Fragt nur den Bildschirmzustand ab und veroeffentlicht ihn bei Aenderung.
+ Ein adb-Aufruf je Geraet, damit kurze Intervalle moeglich sind."""
+ ret=bool(cfg.get('mqtt',{}).get('retain_state',True));now=time.time()
+ for d in cfg.get('devices',[]):
+  if not d.get('enabled',True):continue
+  ident=core.slug(d.get('id') or d.get('name') or d.get('ip'))
+  if now<nexttry.get(ident,0):continue
+  try:
+   awake=core.FireTV(cfg,d).screen();nexttry[ident]=0
+  except Exception:
+   # Geraet nicht erreichbar: eine Minute Pause, sonst blockiert jeder Durchlauf
+   nexttry[ident]=now+60
+   if state.get(ident) is not None:
+    state[ident]=None;c.publish(base+'/'+ident+'/online','0',ret)
+   continue
+  if state.get(ident)!=awake:
+   state[ident]=awake
+   c.publish(base+'/'+ident+'/awake','1' if awake else '0',ret)
+   c.publish(base+'/'+ident+'/display','ON' if awake else 'OFF',ret)
+   c.publish(base+'/'+ident+'/online','1',ret)
 def main():
  ap=argparse.ArgumentParser();ap.add_argument('--config',required=True);ap.add_argument('--core',required=True);a=ap.parse_args();lock=open(os.path.join(os.path.dirname(a.config),'mqtt_listener.lock'),'w')
  try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
@@ -73,12 +96,16 @@ def main():
   try:
    cfg=json.load(open(a.config,encoding='utf-8'));cfg['_config_path']=a.config
    if not cfg.get('mqtt',{}).get('enabled',True) or not cfg.get('mqtt',{}).get('listen_enabled',True):time.sleep(10);continue
-   c=Client(core.mqtt_connection_config(cfg));c.connect();base=core.base_topic(cfg);c.subscribe(base+'/+/set');c.subscribe(base+'/+/command');c.publish(base+'/availability','online',True);mtime=os.path.getmtime(a.config);mm=core.mqtt_source_mtime(cfg);last=time.time();backoff=2
+   c=Client(core.mqtt_connection_config(cfg));c.connect();base=core.base_topic(cfg);c.subscribe(base+'/+/set');c.subscribe(base+'/+/command');c.publish(base+'/availability','online',True);mtime=os.path.getmtime(a.config);mm=core.mqtt_source_mtime(cfg);last=time.time();backoff=2;scr={};scrnext={};scrlast=0.0;scrint=max(0,int(cfg.get('screen_poll_interval',5) or 0))
    while RUN:
     if os.path.getmtime(a.config)!=mtime or core.mqtt_source_mtime(cfg)!=mm:raise RuntimeError('Konfiguration geändert')
     try:h,b=recv_packet(c.s)
     except socket.timeout:
      if time.time()-last>20:c.ping();last=time.time()
+     if scrint and time.time()-scrlast>=scrint:
+      scrlast=time.time()
+      try:screen_watch(cfg,core,c,base,scr,scrnext)
+      except Exception as e:core.debug_log(cfg,'warning',f'Bildschirmüberwachung: {e}')
      continue
     if h>>4!=3 or len(b)<2:continue
     n=struct.unpack('!H',b[:2])[0]
@@ -97,6 +124,7 @@ def main():
     if value is not None and len(str(value))>512:
      core.mqtt_event(cfg,'security',{'device':rel[0],'blocked_action':action,'reason':'value-too-long'},False);continue
     d=core.find_device(cfg,rel[0]);r=core.FireTV(cfg,d).command(action,value);core.mqtt_event(cfg,'event',{'device':rel[0],'action':action,'result':r},False)
+    scr.pop(core.slug(d.get('id') or d.get('name') or d.get('ip')),None)
     try:core.publish_status(cfg,core.FireTV(cfg,d).status())
     except Exception:pass
   except Exception as e:

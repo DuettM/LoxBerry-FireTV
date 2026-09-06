@@ -19,6 +19,7 @@ import json,secrets,sys,os,tempfile
 p=sys.argv[1]
 with open(p,encoding='utf-8') as f:c=json.load(f)
 if not c.get('web_secret'): c['web_secret']=secrets.token_hex(32)
+if not c.get('web_api_key'): c['web_api_key']=secrets.token_urlsafe(24)
 m=c.setdefault('mqtt',{})
 m.setdefault('allowed_actions',['tvon','tvoff','home','back','up','down','left','right','ok','menu','playpause','volumeup','volumedown','mute','app'])
 m.setdefault('allow_reboot',False)
@@ -34,10 +35,10 @@ with os.fdopen(fd,'w',encoding='utf-8') as f:
     json.dump(c,f,ensure_ascii=False,indent=2); f.write('\n')
 os.chmod(tmp,0o600); os.replace(tmp,p)
 PYCFG
-chmod 700 "$PBIN/firetv.py" "$PBIN/mqtt_listener.py" "$PBIN/watchdog.py" "$PBIN/secure_update.py" 2>/dev/null || true
+chmod 700 "$PBIN/firetv.py" "$PBIN/mqtt_listener.py" "$PBIN/watchdog.py" 2>/dev/null || true
 chmod 755 "$PHTMLAUTH/index.cgi" "$PHTMLAUTH/dashboard.cgi" "$PHTMLAUTH/config.cgi" "$PHTMLAUTH/discover.cgi" "$PHTMLAUTH/security.cgi" "$PHTMLAUTH/debug.cgi" "$PHTMLAUTH/api.cgi" "$PHTML/firetv.cgi" 2>/dev/null || true
 chmod 700 "$PCONFIG" "$PLOG" 2>/dev/null || true
-chmod 600 "$PCONFIG/config.json" "$PBIN/update_public_key.hex" 2>/dev/null || true
+chmod 600 "$PCONFIG/config.json" 2>/dev/null || true
 touch "$PLOG/firetv.log" "$PLOG/mqtt-daemon.log" "$PLOG/watchdog.log" 2>/dev/null || true
 chmod 600 "$PLOG/"*.log 2>/dev/null || true
 chown -R loxberry:loxberry "$PCONFIG" "$PLOG" 2>/dev/null || true
