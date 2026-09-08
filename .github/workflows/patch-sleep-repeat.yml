@@ -38,11 +38,11 @@ jobs:
           # Changelog: keep this in the still-unreleased 0.3.12 release.
           p=Path('CHANGELOG.md')
           s=p.read_text(encoding='utf-8')
-          marker='## 0.3.12\n'
+          marker='## [0.3.12]\n'
           bullet='- TV AUS erweitert: wählbar zwischen Sleep/Standby 1×, Sleep/Standby 2× und Power-Taste; Sleep 2× nutzt die einstellbare Wiederhol-Verzögerung\n'
           if bullet not in s:
               if marker not in s: raise SystemExit('0.3.12 changelog section not found')
-              s=s.replace(marker,marker+bullet,1)
+              s=s.replace(marker,marker+'\n### Geändert\n'+bullet,1)
           p.write_text(s,encoding='utf-8')
           PY
           python3 -m py_compile bin/firetv.py webfrontend/htmlauth/config.cgi
