@@ -27,8 +27,27 @@ def launch_cmd(inner):
     if shutil.which("setpriv"): return ["setpriv","--reuid=loxberry","--regid=loxberry","--init-groups"]+inner
     return ["su","-s","/bin/sh","loxberry","-c"," ".join("'"+a.replace("'","'\\''")+"'" for a in inner)]
 
+def veraltet():
+    """Laeuft der Listener zwar, meldet aber seit max_age_seconds nichts mehr,
+    ist er haengengeblieben und wird beendet, damit er neu startet."""
+    age=int(cfg.get("watchdog",{}).get("max_age_seconds",0) or 0)
+    if age<60: return False
+    stamp=cfgp+".heartbeat"
+    try:
+        if time.time()-os.path.getmtime(stamp)<=age: return False
+    except OSError:
+        return False
+    return True
+
 try:
     out=subprocess.run(["pgrep","-f",f"{binp}/mqtt_listener.py.*{cfgp}"],stdout=subprocess.PIPE,text=True).stdout.strip()
+    if out and veraltet():
+        for pid in out.split():
+            try: os.kill(int(pid),15)
+            except (OSError,ValueError): pass
+        log("[WARN] MQTT Listener reagierte nicht mehr und wurde beendet")
+        time.sleep(2)
+        out=""
     if not out:
         inner=[os.path.join(binp,"mqtt_listener.py"),"--config",cfgp,"--core",os.path.join(binp,"firetv.py")]
         with open(daemonlog,"a") as lf:

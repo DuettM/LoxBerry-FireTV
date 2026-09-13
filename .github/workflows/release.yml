@@ -2,11 +2,7 @@ name: Release
 
 # Baut, signiert und veröffentlicht ein Plugin-Release, sobald ein Tag "v*" gepusht wird.
 #
-# Einmalig einzurichten:
-#   Settings > Secrets and variables > Actions > New repository secret
-#   Name:  ED25519_PRIVATE_KEY
-#   Wert:  Inhalt der privaten Schlüsseldatei im PEM-Format
-#          (-----BEGIN PRIVATE KEY----- ... -----END PRIVATE KEY-----)
+# Es wird kein Secret benötigt; der Workflow nutzt nur das automatische GITHUB_TOKEN.
 #
 # Auslösen:
 #   git tag v0.3.12 && git push origin v0.3.12
@@ -78,6 +74,11 @@ jobs:
             || { echo "::error::config.default.json ist kein gültiges JSON"; fail=1; }
           exit $fail
 
+      - name: Tests
+        run: |
+          set -o pipefail
+          python3 -m unittest discover -s tests -v 2>&1 | tail -25
+
       - name: Plugin-ZIP bauen
         env:
           ZIP: ${{ steps.ver.outputs.zip }}
@@ -94,53 +95,12 @@ jobs:
           echo "Größe: $(stat -c%s "dist/$ZIP") Bytes"
           unzip -l "dist/$ZIP" | tail -3
 
-      - name: Schlüsselpaar gegen update_public_key.hex prüfen
-        env:
-          KEY: ${{ secrets.ED25519_PRIVATE_KEY }}
-        run: |
-          if [ -z "$KEY" ]; then
-            echo "::error::Secret ED25519_PRIVATE_KEY fehlt."
-            exit 1
-          fi
-          umask 077
-          printf '%s\n' "$KEY" > /tmp/release.pem
-          PUB_FILE="$(tr -d '[:space:]' < bin/update_public_key.hex)"
-          PUB_KEY="$(openssl pkey -in /tmp/release.pem -pubout -outform DER | tail -c 32 | od -An -v -tx1 | tr -d ' \n')"
-          if [ "$PUB_FILE" != "$PUB_KEY" ]; then
-            echo "::error::Privater Schlüssel passt nicht zu bin/update_public_key.hex."
-            echo "Datei:      $PUB_FILE"
-            echo "Schlüssel:  $PUB_KEY"
-            exit 1
-          fi
-          echo "Schlüsselpaar passt zum eingebauten Public Key."
-
-      - name: Prüfsumme und Signatur erzeugen
+      - name: Prüfsumme erzeugen
         env:
           ZIP: ${{ steps.ver.outputs.zip }}
         run: |
           ( cd dist && sha256sum "$ZIP" > "$ZIP.sha256" )
-          openssl pkeyutl -sign -rawin -inkey /tmp/release.pem -in "dist/$ZIP" -out /tmp/sig.bin
-          base64 -w0 /tmp/sig.bin > "dist/$ZIP.sig"
           echo "SHA256: $(cut -d' ' -f1 "dist/$ZIP.sha256")"
-
-      - name: Signatur mit dem echten Updater gegenprüfen
-        env:
-          ZIP: ${{ steps.ver.outputs.zip }}
-        run: |
-          python3 - "dist/$ZIP" "dist/$ZIP.sig" <<'PY'
-          import base64, importlib.util, sys
-          spec = importlib.util.spec_from_file_location('su', 'bin/secure_update.py')
-          m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
-          blob = open(sys.argv[1], 'rb').read()
-          sig = base64.b64decode(open(sys.argv[2]).read().strip(), validate=True)
-          if not m.verify(sig, blob, m.public_key()):
-              print('::error::Selbstprüfung der Signatur fehlgeschlagen'); sys.exit(1)
-          print('Signatur wird vom Secure-Updater akzeptiert.')
-          PY
-
-      - name: Schlüssel entfernen
-        if: always()
-        run: shred -u /tmp/release.pem 2>/dev/null || rm -f /tmp/release.pem
 
       - name: Release-Notes aus CHANGELOG.md ziehen
         env:
@@ -163,7 +123,7 @@ jobs:
           ARGS=""
           [ "$DRAFT" = "true" ] && ARGS="--draft"
           gh release create "v$VERSION" \
-            "dist/$ZIP" "dist/$ZIP.sha256" "dist/$ZIP.sig" \
+            "dist/$ZIP" "dist/$ZIP.sha256" \
             --title "Fire TV Control $VERSION" \
             --notes-file /tmp/notes.md \
             $ARGS

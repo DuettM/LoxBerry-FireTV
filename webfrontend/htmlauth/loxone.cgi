@@ -1,32 +1,23 @@
 #!/usr/bin/env python3
 import html,json,os,re,sys
 from urllib.parse import parse_qs
+import importlib.util as _il, os as _os, sys as _sys
+def _load_webui():
+    p = _os.path.abspath(_os.environ.get('SCRIPT_FILENAME') or __file__)
+    m = _os.sep + 'webfrontend' + _os.sep
+    base = p.split(m, 1)[0] if m in p else (_os.environ.get('LBHOMEDIR') or _os.environ.get('LBHOME') or '')
+    parts = p.split(_os.sep)
+    fld = parts[parts.index('plugins') + 1] if 'plugins' in parts else 'firetv'
+    mp = _os.path.join(base, 'bin', 'plugins', fld, 'webui.py')
+    s = _il.spec_from_file_location('firetv_webui', mp)
+    mod = _il.module_from_spec(s); s.loader.exec_module(mod); return mod
+webui = _load_webui()
+folder=webui.folder
+root=webui.root
+slug=webui.slug
+version=webui.version
 
-def root():
- p=os.path.abspath(os.environ.get('SCRIPT_FILENAME') or __file__);m=os.sep+'webfrontend'+os.sep
- if m in p:return p.split(m,1)[0]
- r=os.environ.get('LBHOMEDIR') or os.environ.get('LBHOME')
- if r:return r
- raise RuntimeError('LoxBerry Basisverzeichnis konnte nicht ermittelt werden')
-def folder():
- p=os.path.abspath(os.environ.get('SCRIPT_FILENAME') or __file__);parts=p.split(os.sep);return parts[parts.index('plugins')+1] if 'plugins' in parts else 'firetv'
 FOLDER=folder();BASE=root();CFG=os.path.join(BASE,'config','plugins',FOLDER,'config.json')
-def version():
- base=os.path.abspath(os.environ.get('SCRIPT_FILENAME') or __file__).split(os.sep+'webfrontend'+os.sep,1)[0]
- try:
-  db=json.load(open(os.path.join(os.environ.get('LBHOMEDIR') or os.environ.get('LBHOME') or base,'data','system','plugindatabase.json'),encoding='utf-8'))
-  for p in db.get('plugins',[]):
-   if str(p.get('folder',''))==FOLDER or str(p.get('name',''))=='firetv':
-    v=str(p.get('version','') or '').strip()
-    if v:return v
- except Exception:pass
- try:
-  for line in open(os.path.join(base,'plugin.cfg'),encoding='utf-8'):
-   if line.startswith('VERSION='):return line.split('=',1)[1].strip()
- except Exception:pass
- return '0.3.12'
-def slug(s):
- s=re.sub(r'[^a-z0-9]+','-',str(s).strip().lower()).strip('-');return s or 'firetv'
 
 try:C=json.load(open(CFG,encoding='utf-8'))
 except Exception as e:
@@ -92,11 +83,6 @@ print('''<!DOCTYPE html><html lang="de"><head><meta charset="utf-8"><meta name="
 .head h1{margin:0;color:#257c31;font-size:22px;flex:1}
 .ver{font-size:12px;color:#687680;background:#f7f9fa;border:1px solid var(--l);padding:7px 10px;border-radius:6px}
 .layout{display:grid;grid-template-columns:220px minmax(0,1fr);gap:12px}
-.nav{background:#fff;border:1px solid var(--l);border-radius:9px;padding:8px;height:max-content;position:sticky;top:8px}
-.nav small{display:block;color:#8a959e;padding:8px 12px 4px;font-size:10px;text-transform:uppercase;letter-spacing:.07em}
-.nav a{display:block;padding:11px 12px;border-radius:6px;color:#34404a;font-weight:600;text-decoration:none}
-.nav a:hover{background:#f5f8f3}.nav a.active{background:var(--gs);color:#2d7d29}
-.nav .sep{height:1px;background:#edf0f2;margin:7px 4px}
 .card{background:#fff;border:1px solid var(--l);border-radius:9px;margin-bottom:12px}
 .card h2{font-size:17px;margin:0;padding:13px 15px;border-bottom:1px solid #edf0f2}
 .body{padding:15px}
@@ -108,12 +94,25 @@ code{background:#f4f7f8;border:1px solid #e4eaed;border-radius:4px;padding:2px 5
 .box{background:#fafbfb;border:1px solid #e6ebee;border-radius:7px;padding:12px;margin-bottom:12px}
 ol{margin:6px 0 0 18px;padding:0}ol li{margin-bottom:5px}
 .footer{text-align:center;color:#66727b;padding:14px;font-size:13px}
-.mobile{display:none}
+
 @media(max-width:900px){.layout{grid-template-columns:1fr}.nav{display:none}.mobile{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}.mobile a{background:#fff;border:1px solid var(--l);padding:9px 11px;border-radius:6px;text-decoration:none;color:#34404a}.mobile a.active{background:var(--g);border-color:var(--g);color:#fff;font-weight:700}table,thead,tbody,tr,td,th{display:block}thead{display:none}td{border:0;padding:3px 0}tr{border-bottom:1px solid #eef1f3;padding:8px 0}}
+.nav{background:#fff;border:1px solid #dde4e8;border-radius:9px;padding:8px;height:max-content;position:sticky;top:8px}
+.nav small{display:block;color:#8a959e;padding:8px 12px 4px;font-size:10px;text-transform:uppercase;letter-spacing:.07em}
+.nav a{display:block;padding:11px 12px;border-radius:6px;color:#34404a;font-weight:600;text-decoration:none}
+.nav a:hover{background:#f5f8f3}
+.nav a.active{background:#eaf5df;color:#2d7d29}
+.nav .sep{height:1px;background:#edf0f2;margin:7px 4px}
+.mobile{display:none}
+@media(max-width:900px){
+ .nav{display:none}
+ .mobile{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+ .mobile a{background:#fff;border:1px solid #dde4e8;padding:9px 11px;border-radius:6px;text-decoration:none;color:#34404a}
+ .mobile a.active{background:#73b72b;border-color:#73b72b;color:#fff;font-weight:700}
+}
 </style></head><body><div class="root">''')
 print('<div class="head"><h1>Loxone-Anbindung</h1><span class="ver">v%s</span></div>'%html.escape(version()))
-print('<div class="mobile"><a href="dashboard.cgi">\u2302 Übersicht</a><a href="config.cgi">\u2699 Einstellungen</a><a href="discover.cgi">\u2315 Suche</a><a href="security.cgi">\U0001f512 Sicherheit</a><a class="active" href="loxone.cgi">\u21c4 Loxone</a><a href="debug.cgi">\u25a4 Debug</a></div>')
-print('<div class="layout"><nav class="nav"><small>Fire TV Control</small><a href="dashboard.cgi">\u2302 Übersicht</a><a href="discover.cgi">\u2315 Fire TVs suchen</a><div class="sep"></div><a href="config.cgi">\u2699 Einstellungen</a><a href="security.cgi">\U0001f512 Security Center</a><a class="active" href="loxone.cgi">\u21c4 Loxone</a><a href="debug.cgi">\u25a4 Debug-Log</a></nav><div class="content">')
+print(webui.mobile_nav('loxone.cgi'))
+print('<div class="layout">'+webui.sidebar('loxone.cgi')+'<div class="content">')
 
 blocked=[l for a,l,v in CMDS if a not in ALLOWED]
 

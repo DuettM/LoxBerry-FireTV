@@ -32,8 +32,11 @@ def recv_packet(s):
  return f,recv_exact(s,rem) if rem else b''
 class Client:
  def __init__(self,c):self.c=c;self.s=None;self.pid=1
- def connect(self):
+ def connect(self,will=None):
+  # will=(topic,payload): der Broker setzt das Topic selbst, wenn die Verbindung
+  # abreisst - sonst bliebe ein retained "online" nach einem Absturz stehen.
   cid='lb-firetv-rx-%04x'%random.randint(0,65535);flags=2;pl=mstr(cid)
+  if will:flags|=0x04|0x20;pl+=mstr(will[0])+mstr(will[1])
   if self.c.get('username'):
    flags|=0x80;pl+=mstr(self.c['username'])
    if self.c.get('password') is not None:flags|=0x40;pl+=mstr(self.c.get('password',''))
@@ -66,6 +69,12 @@ def token_ok(cfg,sent):
  if not m.get('command_token_required',False):return True
  expected=str(m.get('command_token',''))
  return bool(expected and sent and hmac.compare_digest(expected,str(sent)))
+def heartbeat(cfgp):
+ """Zeitstempel fuer den Watchdog: solange die Schleife laeuft, wird die Datei
+ angefasst. Bleibt sie stehen, haengt der Listener."""
+ try:
+  p=cfgp+'.heartbeat';open(p,'a').close();os.utime(p,None)
+ except Exception:pass
 def screen_watch(cfg,core,c,base,state,nexttry):
  """Fragt nur den Bildschirmzustand ab und veroeffentlicht ihn bei Aenderung.
  Ein adb-Aufruf je Geraet, damit kurze Intervalle moeglich sind."""
@@ -96,12 +105,17 @@ def main():
   try:
    cfg=json.load(open(a.config,encoding='utf-8'));cfg['_config_path']=a.config
    if not cfg.get('mqtt',{}).get('enabled',True) or not cfg.get('mqtt',{}).get('listen_enabled',True):time.sleep(10);continue
-   c=Client(core.mqtt_connection_config(cfg));c.connect();base=core.base_topic(cfg);c.subscribe(base+'/+/set');c.subscribe(base+'/+/command');c.publish(base+'/availability','online',True);mtime=os.path.getmtime(a.config);mm=core.mqtt_source_mtime(cfg);last=time.time();backoff=2;scr={};scrnext={};scrlast=0.0;scrint=max(0,int(cfg.get('screen_poll_interval',5) or 0))
+   base=core.base_topic(cfg);c=Client(core.mqtt_connection_config(cfg));c.connect(will=(base+'/availability','offline'));c.subscribe(base+'/+/set');c.subscribe(base+'/+/command');c.publish(base+'/availability','online',True);heartbeat(a.config);mtime=os.path.getmtime(a.config);mm=core.mqtt_source_mtime(cfg);last=time.time();backoff=2;scr={};scrnext={};scrlast=0.0;scrint=max(0,int(cfg.get('screen_poll_interval',5) or 0))
    while RUN:
+    if not RUN:
+     try:c.publish(base+'/availability','offline',True)
+     except Exception:pass
+     break
     if os.path.getmtime(a.config)!=mtime or core.mqtt_source_mtime(cfg)!=mm:raise RuntimeError('Konfiguration geändert')
     try:h,b=recv_packet(c.s)
     except socket.timeout:
      if time.time()-last>20:c.ping();last=time.time()
+     heartbeat(a.config)
      if scrint and time.time()-scrlast>=scrint:
       scrlast=time.time()
       try:screen_watch(cfg,core,c,base,scr,scrnext)

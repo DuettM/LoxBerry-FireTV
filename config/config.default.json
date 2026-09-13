@@ -34,7 +34,6 @@
     "command_token": ""
   },
   "security": {
-    "discovery_post_only": true,
     "private_adb_only": true
   },
   "watchdog": {

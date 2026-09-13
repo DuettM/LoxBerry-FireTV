@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
 import hashlib,hmac,html,ipaddress,json,os,re,secrets,stat,tempfile,sys
 from urllib.parse import parse_qs
+import importlib.util as _il, os as _os, sys as _sys
+def _load_webui():
+    p = _os.path.abspath(_os.environ.get('SCRIPT_FILENAME') or __file__)
+    m = _os.sep + 'webfrontend' + _os.sep
+    base = p.split(m, 1)[0] if m in p else (_os.environ.get('LBHOMEDIR') or _os.environ.get('LBHOME') or '')
+    parts = p.split(_os.sep)
+    fld = parts[parts.index('plugins') + 1] if 'plugins' in parts else 'firetv'
+    mp = _os.path.join(base, 'bin', 'plugins', fld, 'webui.py')
+    s = _il.spec_from_file_location('firetv_webui', mp)
+    mod = _il.module_from_spec(s); s.loader.exec_module(mod); return mod
+webui = _load_webui()
+folder=webui.folder
+root=webui.root
+same_site=webui.same_site
+version=webui.version
 SAFE_ACTIONS=['tvon','tvoff','home','back','up','down','left','right','ok','menu','playpause','volumeup','volumedown','mute','app']
-def root():
- p=os.path.abspath(os.environ.get('SCRIPT_FILENAME') or __file__);m=os.sep+'webfrontend'+os.sep
- if m in p:return p.split(m,1)[0]
- r=os.environ.get('LBHOMEDIR') or os.environ.get('LBHOME')
- if r:return r
- raise RuntimeError('LoxBerry Basisverzeichnis konnte nicht ermittelt werden')
-def folder():
- p=os.path.abspath(os.environ.get('SCRIPT_FILENAME') or __file__);parts=p.split(os.sep);return parts[parts.index('plugins')+1] if 'plugins' in parts else 'firetv'
 def form():
  data={}
  if os.environ.get('REQUEST_METHOD','GET').upper()=='POST':
@@ -24,30 +31,7 @@ def save(c):
  fd,tmp=tempfile.mkstemp(prefix='.config-',dir=os.path.dirname(CFG),text=True)
  with os.fdopen(fd,'w',encoding='utf-8') as f:json.dump(c,f,ensure_ascii=False,indent=2);f.write('\n')
  os.chmod(tmp,0o600);os.replace(tmp,CFG)
-def version():
- base=os.path.abspath(os.environ.get('SCRIPT_FILENAME') or __file__).split(os.sep+'webfrontend'+os.sep,1)[0]
- # LoxBerry installiert plugin.cfg nicht mit; die installierte Version steht in der
- # Plugindatenbank. plugin.cfg bleibt nur Fallback fuer den Betrieb aus dem Quellordner.
- try:
-  db=json.load(open(os.path.join(os.environ.get('LBHOMEDIR') or os.environ.get('LBHOME') or base,'data','system','plugindatabase.json'),encoding='utf-8'))
-  for p in db.get('plugins',[]):
-   if str(p.get('folder',''))==FOLDER or str(p.get('name',''))=='firetv':
-    v=str(p.get('version','') or '').strip()
-    if v:return v
- except Exception:pass
- try:
-  for line in open(os.path.join(base,'plugin.cfg'),encoding='utf-8'):
-   if line.startswith('VERSION='):return line.split('=',1)[1].strip()
- except Exception:pass
- return '0.3.12'
 def token(c):return hmac.new(str(c.get('web_secret','')).encode(),(os.environ.get('HTTP_COOKIE','')+'|'+os.environ.get('HTTP_USER_AGENT','')).encode(),hashlib.sha256).hexdigest()
-def same_site():
- if os.environ.get('HTTP_SEC_FETCH_SITE','').lower()=='cross-site':return False
- host=os.environ.get('HTTP_HOST','').lower()
- for k in ('HTTP_ORIGIN','HTTP_REFERER'):
-  v=os.environ.get(k,'').lower();m=re.match(r'^https?://([^/]+)',v) if v and host else None
-  if m and m.group(1)!=host:return False
- return True
 def private_ip(v):
  try:
   a=ipaddress.ip_address(str(v));return a.is_private or a.is_loopback or a.is_link_local
@@ -59,7 +43,6 @@ if os.environ.get('REQUEST_METHOD','GET').upper()=='POST':
   m=c.setdefault('mqtt',{});m['allow_reboot']=bool(f.get('allow_reboot'));m['allow_text']=bool(f.get('allow_text'));m['allowed_actions']=[a for a in SAFE_ACTIONS if f.get('allow_'+a)];m['command_token_required']=bool(f.get('command_token_required'))
   if f.get('rotate_token') or not m.get('command_token'):m['command_token']=secrets.token_urlsafe(32)
   if f.get('rotate_api_key') or not c.get('web_api_key'):c['web_api_key']=secrets.token_urlsafe(24)
-  s=c.setdefault('security',{});s['discovery_post_only']=True;s['private_adb_only']=bool(f.get('private_adb_only'))
   save(c);msg='Sicherheitseinstellungen gespeichert.'
  except Exception as e:err=str(e)
 m=c.get('mqtt',{});s=c.get('security',{});allowed=set(m.get('allowed_actions',SAFE_ACTIONS));listen=bool(m.get('listen_enabled',True));danger=bool(m.get('allow_reboot')) or bool(m.get('allow_text'));tokreq=bool(m.get('command_token_required'));privateonly=bool(s.get('private_adb_only',True))
@@ -83,10 +66,11 @@ input[type=checkbox]{accent-color:var(--g);width:19px;height:19px;flex:none}
 .actions label:has(input:checked){background:var(--gs);border-color:#a5cf83;color:#2d7d29;font-weight:bold;box-shadow:inset 3px 0 0 var(--g)}
 .box:has(input[type=checkbox]:checked){border-color:#a5cf83;background:#f4faef}
 .danger label:has(input:checked){color:#b03030;font-weight:bold}
+.mobile{display:none}
 .save{position:sticky;bottom:0;background:#fff;border-top:1px solid #edf0f2;padding:12px 0 4px;margin-top:6px}
-.mobile{display:none}.token{width:100%;padding:8px;font-family:monospace}.notice{padding:10px 12px;border-radius:6px;margin-bottom:12px}.footer{text-align:center;color:#66727b;padding:16px;font-size:13px}@media(max-width:850px){.layout{grid-template-columns:1fr}.nav{display:none}.grid{grid-template-columns:1fr}.actions{grid-template-columns:repeat(2,1fr)}.mobile{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}.mobile a{background:#fff;border:1px solid var(--l);padding:9px 11px;border-radius:6px;text-decoration:none;color:#34404a;font-weight:600}.mobile a.active{background:var(--g);border-color:var(--g);color:#fff;font-weight:700}}
+.token{width:100%;padding:8px;font-family:monospace}.notice{padding:10px 12px;border-radius:6px;margin-bottom:12px}.footer{text-align:center;color:#66727b;padding:16px;font-size:13px}@media(max-width:850px){.layout{grid-template-columns:1fr}.nav{display:none}.grid{grid-template-columns:1fr}.actions{grid-template-columns:repeat(2,1fr)}.mobile{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}.mobile a{background:#fff;border:1px solid var(--l);padding:9px 11px;border-radius:6px;text-decoration:none;color:#34404a;font-weight:600}.mobile a.active{background:var(--g);border-color:var(--g);color:#fff;font-weight:700}}
 @media(max-width:520px){.actions{grid-template-columns:1fr}}</style>'''
-V=html.escape(version());print(f'<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fire TV Security</title>{CSS}</head><body><div class="root"><div class="head"><div class="logo">🔒</div><div class="title"><h1>Security Center</h1><p>Hardening, MQTT-Berechtigungen und Selbsttests</p></div><div class="ver">Version {V}</div></div><div class="mobile"><a href="dashboard.cgi">⌂ Übersicht</a><a href="config.cgi">⚙ Einstellungen</a><a href="discover.cgi">⌕ Suche</a><a class="active" href="security.cgi">🔒 Sicherheit</a><a href="loxone.cgi">⇄ Loxone</a><a href="debug.cgi">▤ Debug</a></div><div class="layout"><nav class="nav"><a href="dashboard.cgi">⌂ Übersicht</a><a href="discover.cgi">⌕ Fire TVs suchen</a><a href="config.cgi">⚙ Einstellungen</a><a class="active" href="security.cgi">🔒 Security Center</a><a href="loxone.cgi">⇄ Loxone</a><a href="debug.cgi">▤ Debug-Log</a></nav><main>')
+V=html.escape(version());print(f'<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fire TV Security</title>{CSS}</head><body><div class="root"><div class="head"><div class="logo">🔒</div><div class="title"><h1>Security Center</h1><p>Hardening, MQTT-Berechtigungen und Selbsttests</p></div><div class="ver">Version {V}</div></div>{webui.mobile_nav('security.cgi')}<div class="layout">{webui.sidebar('security.cgi')}<main>')
 if msg:print('<div class="notice good">%s</div>'%html.escape(msg))
 if err:print('<div class="notice bad">%s</div>'%html.escape(err))
 cls='good' if score>=85 else 'warn' if score>=70 else 'bad';print('<section class="card"><h2>Sicherheitsbewertung</h2><div class="body"><div class="score"><div class="num">%d</div><div><h3 class="%s">%s</h3><p>Automatische lokale Prüfungen.</p></div></div><div class="grid">'%(score,cls,level))

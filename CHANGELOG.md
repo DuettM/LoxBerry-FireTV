@@ -1,6 +1,25 @@
 # Changelog
 
-## [0.3.12]
+## [0.3.14]
+
+### Aufgeräumt
+- Die sechs Seiten der Oberfläche teilen sich jetzt ein gemeinsames Modul (`bin/webui.py`) für Pfadermittlung, Versionsanzeige, CSRF-Prüfung, Formularauswertung und Navigation. Bisher stand dieser Code in jeder Datei erneut – daher hatte das Security Center als einzige Seite keine Navigation für Mobilgeräte, und die Prüfung der TV-AUS-Methode wurde an einer Stelle erweitert und an der anderen nicht.
+- Erste automatische Tests (`tests/`, 51 Stück): Bildschirmerkennung, Adressprüfung, Quoting der Texteingabe, CEC-Sequenzen, Loxone-Vorlage sowie ein Durchlauf aller Seiten, der Navigation, Versionsanzeige und Sicherheitskopfzeilen vergleicht. Zusätzlich wird geprüft, dass jeder Wert, der in einem Auswahlfeld steht, sich auch speichern lässt.
+- `api.cgi` nutzt ebenfalls das gemeinsame Modul.
+- Neuer Workflow `tests.yml` führt Syntaxprüfung und Tests bei jedem Push aus; der Release-Workflow bricht ab, wenn die Tests fehlschlagen.
+
+### Behoben
+- Die Loxone-Seite zeigte die Navigation unformatiert als Linkliste, und die Leiste für Mobilgeräte erschien auch am Desktop. Zwei neue Tests prüfen jetzt für jede Seite, dass die Navigationsregeln im Stylesheet stehen und kein Programmcode als Text im HTML landet.
+- Das Dashboard fragt alle Geräte parallel ab. Bei vier nicht erreichbaren Fire TVs dauerte der Seitenaufbau vorher das Vierfache eines einzelnen Zeitlimits.
+- Der Watchdog wertet `max_age_seconds` endlich aus: der Listener setzt alle paar Sekunden ein Lebenszeichen, bleibt es aus, wird der hängende Prozess beendet und neu gestartet. Bisher war die Einstellung wirkungslos.
+- `security.discovery_post_only` entfernt – der Schalter wurde nie ausgewertet.
+
+### Neu
+- `api.cgi` wertet bei GET auch Query-Parameter aus. `?action=status&device=wz` lieferte bisher stillschweigend die gesamte Geräteliste, weil nur POST-Daten gelesen wurden. Schaltbefehle bleiben auf POST beschränkt.
+- Die Deinstallation löscht die retained MQTT-Topics beim Broker und entfernt Hilfsdateien. Bisher blieb nach dem Entfernen des Plugins dauerhaft `online` stehen.
+- Das ADB-Zeitlimit lässt sich in den Einstellungen ändern, bisher nur durch Bearbeiten der Konfigurationsdatei.
+
+## [0.3.13]
 
 ### Sicherheit
 - Texteingabe (`text`) wird vor der Übergabe an `adb shell` gequotet. Vorher konnten Zeichen wie `;`, `|` oder `$(...)` als Shell-Befehl auf dem Fire TV ausgeführt werden.
@@ -14,6 +33,8 @@
 - Schnelle Bildschirmüberwachung: der MQTT-Listener fragt in einem einstellbaren Takt (Standard 5 Sekunden, 0 schaltet ab) nur den Bildschirmzustand ab und meldet jede Änderung sofort über `awake` und `display`. Dafür genügt ein einziger adb-Aufruf je Gerät. Nicht erreichbare Geräte werden eine Minute lang übersprungen, damit sie den Takt nicht ausbremsen.
 - Das Verfahren zur Bildschirmerkennung ist wählbar (Einstellungen → Bildschirmerkennung): Display Power, Display-Suspend-Blocker, beides kombiniert, Wakefulness oder automatisch. „Automatisch" wertet jetzt bevorzugt `Display Power` aus und fällt nur zurück, wenn die Zeile fehlt – bisher galt der Bildschirm schon als an, sobald `mWakefulness=Awake` war. Ein Fire TV Stick bleibt aber wach, wenn der Fernseher per Fernbedienung ausgeschaltet wird, weshalb der Zustand dauerhaft „an" blieb.
 - Bildschirm-Diagnose auf der Debug-Seite: zeigt pro Gerät die Rohwerte aus `dumpsys power` (Wakefulness, Display Power, Suspend Blocker) samt aktueller Erkennung. Zusätzlich wird jedes Erkennungsverfahren mit seinem Ergebnis aufgelistet, sodass sich ohne SSH ablesen lässt, welches beim eigenen Gerät auf das Abschalten reagiert.
+- Ausschalten kennt jetzt dieselben Varianten wie das Einschalten: Sleep 1×, Sleep 2×, Power 1×, Power 2× und eine Automatik (Sleep 2× + Power). Neu angelegte Geräte verwenden Sleep 2×, weil viele Fernseher den ersten CEC-Befehl verschlucken. Die Verzögerung zwischen den Befehlen ist dieselbe wie beim Einschalten.
+- Der MQTT-Listener meldet sich beim Broker mit einem Last Will an: `<basis>/availability` geht auf `offline`, sobald die Verbindung abreißt, und beim geordneten Beenden ebenfalls. Bisher blieb dort dauerhaft `online` stehen, auch wenn der Listener längst nicht mehr lief.
 - API-Key für `api.cgi` (Header `X-FireTV-Key` oder POST-Feld `apikey`) als Alternative zum browsergebundenen CSRF-Token, damit Schaltbefehle vom Loxone Miniserver nutzbar sind. Verwaltung im Security Center.
 
 ### Entfernt

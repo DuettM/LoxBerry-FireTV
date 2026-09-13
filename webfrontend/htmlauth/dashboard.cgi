@@ -1,15 +1,24 @@
 #!/usr/bin/env python3
+from concurrent.futures import ThreadPoolExecutor
 import hashlib,hmac,html,json,os,re,subprocess,sys
 from urllib.parse import parse_qs
+import importlib.util as _il, os as _os, sys as _sys
+def _load_webui():
+    p = _os.path.abspath(_os.environ.get('SCRIPT_FILENAME') or __file__)
+    m = _os.sep + 'webfrontend' + _os.sep
+    base = p.split(m, 1)[0] if m in p else (_os.environ.get('LBHOMEDIR') or _os.environ.get('LBHOME') or '')
+    parts = p.split(_os.sep)
+    fld = parts[parts.index('plugins') + 1] if 'plugins' in parts else 'firetv'
+    mp = _os.path.join(base, 'bin', 'plugins', fld, 'webui.py')
+    s = _il.spec_from_file_location('firetv_webui', mp)
+    mod = _il.module_from_spec(s); s.loader.exec_module(mod); return mod
+webui = _load_webui()
+csrf=webui.csrf
+folder=webui.folder
+plugin_version=webui.version
+root=webui.root
+same_site=webui.same_site
 
-def root():
- p=os.path.abspath(os.environ.get('SCRIPT_FILENAME') or __file__);marker=os.sep+'webfrontend'+os.sep
- if marker in p:return p.split(marker,1)[0]
- r=os.environ.get('LBHOMEDIR') or os.environ.get('LBHOME')
- if r:return r
- raise RuntimeError('LoxBerry Basisverzeichnis konnte nicht ermittelt werden')
-def folder():
- p=os.path.abspath(os.environ.get('SCRIPT_FILENAME') or __file__);parts=p.split(os.sep);return parts[parts.index('plugins')+1] if 'plugins' in parts else 'firetv'
 def form_data():
  data={k:v[-1] if v else '' for k,v in parse_qs(os.environ.get('QUERY_STRING',''),keep_blank_values=True).items()}
  if os.environ.get('REQUEST_METHOD','GET').upper()=='POST':
@@ -20,31 +29,7 @@ def form_data():
    for k,v in parse_qs(raw.decode('utf-8','replace'),keep_blank_values=True).items():data[k]=v[-1] if v else ''
  return data
 FOLDER=folder();CFG=os.path.join(root(),'config','plugins',FOLDER,'config.json');BIN=os.path.join(root(),'bin','plugins',FOLDER)
-def plugin_version():
- base=os.path.abspath(os.environ.get('SCRIPT_FILENAME') or __file__).split(os.sep+'webfrontend'+os.sep,1)[0]
- # LoxBerry installiert plugin.cfg nicht mit; die installierte Version steht in der
- # Plugindatenbank. plugin.cfg bleibt nur Fallback fuer den Betrieb aus dem Quellordner.
- try:
-  db=json.load(open(os.path.join(os.environ.get('LBHOMEDIR') or os.environ.get('LBHOME') or base,'data','system','plugindatabase.json'),encoding='utf-8'))
-  for p in db.get('plugins',[]):
-   if str(p.get('folder',''))==FOLDER or str(p.get('name',''))=='firetv':
-    v=str(p.get('version','') or '').strip()
-    if v:return v
- except Exception:pass
- try:
-  for line in open(os.path.join(base,'plugin.cfg'),encoding='utf-8'):
-   if line.startswith('VERSION='):return line.split('=',1)[1].strip()
- except Exception:pass
- return '0.3.12'
 VERSION=plugin_version()
-def csrf(c):return hmac.new(str(c.get('web_secret','')).encode(),(os.environ.get('HTTP_COOKIE','')+'|'+os.environ.get('HTTP_USER_AGENT','')).encode(),hashlib.sha256).hexdigest()
-def same_site():
- if os.environ.get('HTTP_SEC_FETCH_SITE','').lower()=='cross-site':return False
- host=os.environ.get('HTTP_HOST','').lower()
- for k in ('HTTP_ORIGIN','HTTP_REFERER'):
-  v=os.environ.get(k,'').lower();m=re.match(r'^https?://([^/]+)',v) if v and host else None
-  if m and m.group(1)!=host:return False
- return True
 try:c=json.load(open(CFG,encoding='utf-8'))
 except Exception as e:
  print('Status: 500 Internal Server Error\r\nContent-Type: text/html; charset=utf-8\r\n\r\n',end='');print('<h1>Fire TV Control</h1><p>%s</p>'%html.escape(str(e)));sys.exit(0)
@@ -70,12 +55,20 @@ if msg:print('<div class="notice"><b>Ausgeführt:</b> %s</div>'%html.escape(msg)
 if err:print('<div class="notice err"><b>Fehler:</b> %s</div>'%html.escape(err))
 devices=[d for d in c.get('devices',[]) if d.get('enabled',True)]
 print('<div class="metrics"><div class="metric"><div class="mic">▣</div><div><b>%d</b>Geräte<br><small>konfiguriert</small></div></div><div class="metric"><div class="mic">↔</div><div><b>%s</b>MQTT<br><small>%s</small></div></div><div class="metric"><div class="mic">✓</div><div><b>%s</b>Watchdog<br><small>Systemüberwachung</small></div></div><div class="metric"><div class="mic">⌁</div><div><b>%ss</b>Polling<br><small>Statusintervall</small></div></div></div>'%(len(devices),'Aktiv' if c.get('mqtt',{}).get('enabled',True) else 'Aus','Befehle aktiv' if c.get('mqtt',{}).get('listen_enabled',True) else 'nur Status','Aktiv' if c.get('watchdog',{}).get('enabled',True) else 'Aus',c.get('poll_interval',30)))
+
+def _status(ident):
+ try:
+  p=subprocess.run([os.path.join(BIN,'firetv.py'),'--config',CFG,'--device',ident,'--action','status'],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=25)
+  return json.loads((p.stdout or '').strip().splitlines()[-1])
+ except subprocess.TimeoutExpired:return {'online':False,'error':'Zeitüberschreitung bei der Statusabfrage'}
+ except Exception as e:return {'online':False,'error':str(e)}
+# Alle Geraete parallel abfragen - nacheinander wartet die Seite sonst bei
+# jedem nicht erreichbaren Fire TV erneut das volle Zeitlimit ab.
+_ids=[str(d.get('id') or d.get('name') or d.get('ip')) for d in devices]
+STATUS=dict(zip(_ids,ThreadPoolExecutor(max_workers=min(8,len(_ids))).map(_status,_ids))) if _ids else {}
 for d in devices:
  ident=str(d.get('id') or d.get('name') or d.get('ip'))
- try:
-  p=subprocess.run([os.path.join(BIN,'firetv.py'),'--config',CFG,'--device',ident,'--action','status'],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=25);st=json.loads((p.stdout or '').strip().splitlines()[-1])
- except subprocess.TimeoutExpired:st={'online':False,'error':'Zeitüberschreitung bei der Statusabfrage'}
- except Exception as e:st={'online':False,'error':str(e)}
+ st=STATUS.get(ident,{'online':False,'error':'Kein Status ermittelt'})
  name=html.escape(str(d.get('name','Fire TV')));addr='%s:%s'%(html.escape(str(d.get('ip',''))),d.get('port',5555));app=html.escape(str(st.get('app','—') or '—'));model=html.escape(str(st.get('model','—') or '—'))
  print('<section class="card"><div class="card-head"><h2>▣ %s</h2><span class="state %s">%s</span></div><div class="body">'%(name,'ok' if st.get('online') else 'bad','ONLINE' if st.get('online') else 'OFFLINE'))
  if not st.get('online'):print('<div class="notice err" style="margin:0 0 12px"><b>Status nicht abrufbar:</b> %s</div>'%html.escape(str(st.get('error') or st.get('adb_message') or 'Fire TV nicht erreichbar')))

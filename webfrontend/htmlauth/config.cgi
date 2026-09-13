@@ -1,15 +1,23 @@
 #!/usr/bin/env python3
 import hashlib,hmac,html,ipaddress,json,os,re,subprocess,tempfile,sys
 from urllib.parse import parse_qs
+import importlib.util as _il, os as _os, sys as _sys
+def _load_webui():
+    p = _os.path.abspath(_os.environ.get('SCRIPT_FILENAME') or __file__)
+    m = _os.sep + 'webfrontend' + _os.sep
+    base = p.split(m, 1)[0] if m in p else (_os.environ.get('LBHOMEDIR') or _os.environ.get('LBHOME') or '')
+    parts = p.split(_os.sep)
+    fld = parts[parts.index('plugins') + 1] if 'plugins' in parts else 'firetv'
+    mp = _os.path.join(base, 'bin', 'plugins', fld, 'webui.py')
+    s = _il.spec_from_file_location('firetv_webui', mp)
+    mod = _il.module_from_spec(s); s.loader.exec_module(mod); return mod
+webui = _load_webui()
+csrf=webui.csrf
+folder=webui.folder
+root=webui.root
+same_site=webui.same_site
+version=webui.version
 
-def root():
- p=os.path.abspath(os.environ.get('SCRIPT_FILENAME') or __file__);m=os.sep+'webfrontend'+os.sep
- if m in p:return p.split(m,1)[0]
- r=os.environ.get('LBHOMEDIR') or os.environ.get('LBHOME')
- if r:return r
- raise RuntimeError('LoxBerry Basisverzeichnis konnte nicht ermittelt werden')
-def folder():
- p=os.path.abspath(os.environ.get('SCRIPT_FILENAME') or __file__);parts=p.split(os.sep);return parts[parts.index('plugins')+1] if 'plugins' in parts else 'firetv'
 def form_data():
  data={}
  if os.environ.get('REQUEST_METHOD','GET').upper()=='POST':
@@ -30,30 +38,6 @@ def save(c):
  fd,tmp=tempfile.mkstemp(prefix='.config-',dir=os.path.dirname(CFG),text=True)
  with os.fdopen(fd,'w',encoding='utf-8') as f:json.dump(c,f,ensure_ascii=False,indent=2);f.write('\n')
  os.chmod(tmp,0o600);os.replace(tmp,CFG)
-def version():
- base=os.path.abspath(os.environ.get('SCRIPT_FILENAME') or __file__).split(os.sep+'webfrontend'+os.sep,1)[0]
- # LoxBerry installiert plugin.cfg nicht mit; die installierte Version steht in der
- # Plugindatenbank. plugin.cfg bleibt nur Fallback fuer den Betrieb aus dem Quellordner.
- try:
-  db=json.load(open(os.path.join(os.environ.get('LBHOMEDIR') or os.environ.get('LBHOME') or base,'data','system','plugindatabase.json'),encoding='utf-8'))
-  for p in db.get('plugins',[]):
-   if str(p.get('folder',''))==FOLDER or str(p.get('name',''))=='firetv':
-    v=str(p.get('version','') or '').strip()
-    if v:return v
- except Exception:pass
- try:
-  for line in open(os.path.join(base,'plugin.cfg'),encoding='utf-8'):
-   if line.startswith('VERSION='):return line.split('=',1)[1].strip()
- except Exception:pass
- return '0.3.12'
-def csrf(c):return hmac.new(str(c.get('web_secret','')).encode(),(os.environ.get('HTTP_COOKIE','')+'|'+os.environ.get('HTTP_USER_AGENT','')).encode(),hashlib.sha256).hexdigest()
-def same_site():
- if os.environ.get('HTTP_SEC_FETCH_SITE','').lower()=='cross-site':return False
- host=os.environ.get('HTTP_HOST','').lower()
- for k in ('HTTP_ORIGIN','HTTP_REFERER'):
-  v=os.environ.get(k,'').lower();m=re.match(r'^https?://([^/]+)',v) if v and host else None
-  if m and m.group(1)!=host:return False
- return True
 def clean_topic(v):
  v=(v or 'firetv').strip().strip('/') or 'firetv'
  if len(v)>128 or re.search(r'[+#\s\x00]',v):raise ValueError('MQTT Basistopic ungültig.')
@@ -75,12 +59,14 @@ if os.environ.get('REQUEST_METHOD','GET').upper()=='POST':
   act=f.get('form_action','')
   if act=='save_general':
    poll=int(f.get('poll_interval','30'))
+   adbt=int(f.get('adb_timeout','8'))
+   if not 2<=adbt<=30:raise ValueError('ADB-Zeitlimit muss zwischen 2 und 30 Sekunden liegen.')
    scr=int(f.get('screen_poll_interval','5') or 0)
    if scr and not 2<=scr<=600:raise ValueError('Bildschirmintervall muss zwischen 2 und 600 Sekunden liegen (0 = aus).')
    if not 10<=poll<=3600:raise ValueError('Abfrageintervall muss zwischen 10 und 3600 Sekunden liegen.')
    mth=str(f.get('screen_detect','auto')).lower()
    if mth not in ('auto','display','suspendblocker','display_or_blocker','wakefulness'):raise ValueError('Unbekanntes Erkennungsverfahren.')
-   c['poll_interval']=poll;c['screen_poll_interval']=scr;c['screen_detect']=mth;c.setdefault('mqtt',{})['enabled']=bool(f.get('mqtt_enabled'));c['mqtt']['listen_enabled']=bool(f.get('mqtt_listen'));c['mqtt']['base_topic']=clean_topic(f.get('base_topic'));c.setdefault('watchdog',{})['enabled']=bool(f.get('watchdog_enabled'));save(c);notice='Einstellungen gespeichert.'
+   c['poll_interval']=poll;c['adb_timeout']=adbt;c['screen_poll_interval']=scr;c['screen_detect']=mth;c.setdefault('mqtt',{})['enabled']=bool(f.get('mqtt_enabled'));c['mqtt']['listen_enabled']=bool(f.get('mqtt_listen'));c['mqtt']['base_topic']=clean_topic(f.get('base_topic'));c.setdefault('watchdog',{})['enabled']=bool(f.get('watchdog_enabled'));save(c);notice='Einstellungen gespeichert.'
   elif act=='add_device':
    ip=(f.get('ip') or '').strip();name=(f.get('name') or 'Fire TV').strip();port=int(f.get('port','5555'))
    if not valid_ip(ip):raise ValueError('IP/Hostname ungültig.')
@@ -89,17 +75,17 @@ if os.environ.get('REQUEST_METHOD','GET').upper()=='POST':
    if any(str(d.get('ip',''))==ip for d in c.get('devices',[])):raise ValueError('Dieses Gerät ist bereits vorhanden.')
    baseid=re.sub(r'[^a-zA-Z0-9_-]+','-',name.lower()).strip('-') or ip.replace('.','-');ident=baseid;n=2;ids={str(d.get('id','')) for d in c.get('devices',[])}
    while ident in ids:ident=f'{baseid}-{n}';n+=1
-   c.setdefault('devices',[]).append({'id':ident,'name':name,'ip':ip,'port':port,'enabled':True,'cec_on_method':'home','cec_on_delay':0.8,'cec_off_method':'sleep'});save(c);notice='Gerät hinzugefügt.'
+   c.setdefault('devices',[]).append({'id':ident,'name':name,'ip':ip,'port':port,'enabled':True,'cec_on_method':'home','cec_on_delay':0.8,'cec_off_method':'sleep_repeat','cec_off_delay':0.8});save(c);notice='Gerät hinzugefügt.'
   elif act=='save_device_cec':
-   ident=f.get('id','') or '';onm=f.get('cec_on_method','home');offm=f.get('cec_off_method','sleep')
+   ident=f.get('id','') or '';onm=f.get('cec_on_method','home');offm=f.get('cec_off_method','sleep_repeat')
    try:delay=float((f.get('cec_on_delay') or '0.8').replace(',','.'))
    except ValueError:raise ValueError('Verzögerung muss eine Zahl sein.')
    if not .1<=delay<=5.0:raise ValueError('Verzögerung muss zwischen 0,1 und 5,0 Sekunden liegen.')
    if onm not in ('home','home_repeat','wakeup_home','power_home','auto'):raise ValueError('Ungültige TV-EIN-Methode.')
-   if offm not in ('sleep','power'):raise ValueError('Ungültige TV-AUS-Methode.')
+   if offm not in ('sleep','sleep_repeat','power','power_repeat','auto'):raise ValueError('Ungültige TV-AUS-Methode.')
    d=finddev(c,ident)
    if not d:raise ValueError('Gerät nicht gefunden.')
-   d['cec_on_method']=onm;d['cec_on_delay']=round(delay,2);d['cec_off_method']=offm;save(c);notice='CEC-Einstellungen gespeichert.'
+   d['cec_on_method']=onm;d['cec_on_delay']=round(delay,2);d['cec_off_method']=offm;d['cec_off_delay']=round(delay,2);save(c);notice='CEC-Einstellungen gespeichert.'
   elif act=='adb_reconnect':
    ident=f.get('id','') or '';d=finddev(c,ident)
    if not d:raise ValueError('Gerät nicht gefunden.')
@@ -118,16 +104,16 @@ if os.environ.get('REQUEST_METHOD','GET').upper()=='POST':
  except Exception as e:error=str(e)
 print("Content-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nContent-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'self'\r\nX-Frame-Options: SAMEORIGIN\r\n\r\n",end='')
 CSS='''<style>:root{--g:#73b72b;--gs:#eaf5df;--t:#29323a;--m:#71808d;--l:#dde4e8;--bg:#f6f8f9;--r:#c93b3b;--o:#b36b00}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--t);font-family:Arial,Helvetica,sans-serif}.root{max-width:1480px;margin:auto;padding:12px}.head{display:flex;align-items:center;gap:14px;background:#fff;border:1px solid var(--l);border-radius:9px;padding:13px 16px;margin-bottom:12px}.logo{width:58px;height:58px;border-radius:8px;background:linear-gradient(145deg,#86ca42,#5ba21d);display:grid;place-items:center;color:#fff;font-size:29px}.title{flex:1}.title h1{margin:0;color:#257c31;font-size:24px}.title p{margin:4px 0 0;color:#56616b}.ver{font-size:12px;color:#687680}.layout{display:grid;grid-template-columns:220px minmax(0,1fr);gap:12px}.nav{background:#fff;border:1px solid var(--l);border-radius:9px;padding:8px;height:max-content;position:sticky;top:8px}.nav small{display:block;color:#8a959e;padding:8px 12px 4px;font-size:10px;text-transform:uppercase}.nav a{display:block;padding:11px 12px;border-radius:6px;color:#34404a;font-weight:600;text-decoration:none}.nav a:hover{background:#f5f8f3}.nav a.active{background:var(--gs);color:#2d7d29}.sep{height:1px;background:#edf0f2;margin:7px 4px}.card{background:#fff;border:1px solid var(--l);border-radius:9px;margin-bottom:12px}.card h2{font-size:17px;margin:0;padding:13px 15px;border-bottom:1px solid #edf0f2}.body{padding:15px}.grid{display:grid;grid-template-columns:repeat(2,minmax(220px,1fr));gap:12px}.field label{display:block;font-weight:bold;font-size:12px;margin-bottom:5px}.field input,.field select{width:100%;height:38px;border:1px solid #cbd4da;border-radius:6px;padding:0 10px}.checks{display:flex;gap:18px;flex-wrap:wrap;margin:14px 0}.btn{border:1px solid #cdd6dc;background:#fff;border-radius:6px;padding:9px 12px;cursor:pointer;font-weight:600;color:#2f3942;text-decoration:none}.green{background:var(--g);border-color:var(--g);color:#fff}.red{border-color:#efb8b8;color:var(--r)}.orange{border-color:#e8c99a;color:var(--o);background:#fffaf2}.notice{padding:10px 12px;border-radius:6px;margin-bottom:12px}.ok{background:#edf8e8;border:1px solid #cbe5bd;color:#34751f}.err{background:#fff0f0;border:1px solid #efc0c0;color:#a52828}.muted{color:var(--m);font-size:12px}.device{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:start;padding:13px 0;border-bottom:1px solid #edf0f2}.device form{margin:8px 0 0}.device-actions{display:flex;gap:7px;align-items:end;flex-wrap:wrap}.mini{display:flex;flex-direction:column;gap:3px}.mini label{font-size:11px;color:var(--m);font-weight:bold}.mini select,.mini input{height:36px;border:1px solid #cbd4da;border-radius:6px;padding:0 8px;background:#fff}.mini input{width:95px}.side-actions{display:grid;gap:7px}.footer{text-align:center;color:#66727b;padding:16px;font-size:13px}.mobile{display:none}@media(max-width:850px){.layout{grid-template-columns:1fr}.nav{display:none}.mobile{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}.mobile a{background:#fff;border:1px solid var(--l);padding:8px;border-radius:6px;text-decoration:none;color:#34404a}.mobile a.active{background:var(--g);border-color:var(--g);color:#fff;font-weight:700}.grid{grid-template-columns:1fr}.device{grid-template-columns:1fr}.side-actions{display:flex;flex-wrap:wrap}}</style>'''
-V=html.escape(version());print(f'<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fire TV Einstellungen</title>{CSS}</head><body><div class="root"><div class="head"><div class="logo">⚙</div><div class="title"><h1>Fire TV Einstellungen</h1><p>Geräte, MQTT und Systemverhalten konfigurieren</p></div><div class="ver">Version {V}</div></div><div class="mobile"><a href="dashboard.cgi">⌂ Übersicht</a><a class="active" href="config.cgi">⚙ Einstellungen</a><a href="discover.cgi">⌕ Suche</a><a href="security.cgi">🔒 Sicherheit</a><a href="loxone.cgi">⇄ Loxone</a><a href="debug.cgi">▤ Debug</a></div><div class="layout"><nav class="nav"><small>Fire TV Control</small><a href="dashboard.cgi">⌂ Übersicht</a><a href="discover.cgi">⌕ Fire TVs suchen</a><div class="sep"></div><a class="active" href="config.cgi">⚙ Einstellungen</a><a href="security.cgi">🔒 Security Center</a><a href="loxone.cgi">⇄ Loxone</a><a href="debug.cgi">▤ Debug-Log</a></nav><main>')
+V=html.escape(version());print(f'<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fire TV Einstellungen</title>{CSS}</head><body><div class="root"><div class="head"><div class="logo">⚙</div><div class="title"><h1>Fire TV Einstellungen</h1><p>Geräte, MQTT und Systemverhalten konfigurieren</p></div><div class="ver">Version {V}</div></div>{webui.mobile_nav('config.cgi')}<div class="layout">{webui.sidebar('config.cgi')}<main>')
 if notice:print('<div class="notice ok">%s</div>'%html.escape(notice))
 if error:print('<div class="notice err">%s</div>'%html.escape(error))
 h='<input type="hidden" name="csrf" value="%s">'%html.escape(token,quote=True)
-print('<section class="card"><h2>Allgemein</h2><div class="body"><form method="post">%s<input type="hidden" name="form_action" value="save_general"><div class="grid"><div class="field"><label>Abfrageintervall</label><input type="number" min="10" max="3600" name="poll_interval" value="%s"></div><div class="field"><label>Bildschirm live (Sek., 0 = aus)</label><input type="number" min="0" max="600" name="screen_poll_interval" value="%s"></div><div class="field"><label>Bildschirmerkennung</label><select name="screen_detect" style="height:38px;width:100%%;border:1px solid #cbd4da;border-radius:6px;padding:0 8px">%s</select></div><div class="field"><label>MQTT Basistopic</label><input name="base_topic" maxlength="128" value="%s"></div></div><div class="checks"><label><input type="checkbox" name="mqtt_enabled" %s> MQTT aktiv</label><label><input type="checkbox" name="mqtt_listen" %s> Befehle empfangen</label><label><input type="checkbox" name="watchdog_enabled" %s> Watchdog aktiv</label></div><button class="btn green">Speichern</button></form><p class="muted">Welches Verfahren bei deinem Fire TV richtig liegt, zeigt die Bildschirm-Diagnose auf der Debug-Seite. „Bildschirm live" fragt nur den Bildschirmzustand ab und meldet Änderungen über MQTT innerhalb weniger Sekunden. Das übrige Abfrageintervall bleibt davon unberührt. MQTT-Rechte findest du im Security Center. Den Plugin-Loglevel stellst du in der LoxBerry-Pluginverwaltung ein.</p></div></section>'%(h,c.get('poll_interval',30),c.get('screen_poll_interval',5),screen_options(c),html.escape(c.get('mqtt',{}).get('base_topic','firetv'),quote=True),'checked' if c.get('mqtt',{}).get('enabled',True) else '','checked' if c.get('mqtt',{}).get('listen_enabled',True) else '','checked' if c.get('watchdog',{}).get('enabled',True) else ''))
+print('<section class="card"><h2>Allgemein</h2><div class="body"><form method="post">%s<input type="hidden" name="form_action" value="save_general"><div class="grid"><div class="field"><label>Abfrageintervall</label><input type="number" min="10" max="3600" name="poll_interval" value="%s"></div><div class="field"><label>ADB-Zeitlimit (Sek.)</label><input type="number" min="2" max="30" name="adb_timeout" value="%s"></div><div class="field"><label>Bildschirm live (Sek., 0 = aus)</label><input type="number" min="0" max="600" name="screen_poll_interval" value="%s"></div><div class="field"><label>Bildschirmerkennung</label><select name="screen_detect" style="height:38px;width:100%%;border:1px solid #cbd4da;border-radius:6px;padding:0 8px">%s</select></div><div class="field"><label>MQTT Basistopic</label><input name="base_topic" maxlength="128" value="%s"></div></div><div class="checks"><label><input type="checkbox" name="mqtt_enabled" %s> MQTT aktiv</label><label><input type="checkbox" name="mqtt_listen" %s> Befehle empfangen</label><label><input type="checkbox" name="watchdog_enabled" %s> Watchdog aktiv</label></div><button class="btn green">Speichern</button></form><p class="muted">Welches Verfahren bei deinem Fire TV richtig liegt, zeigt die Bildschirm-Diagnose auf der Debug-Seite. „Bildschirm live" fragt nur den Bildschirmzustand ab und meldet Änderungen über MQTT innerhalb weniger Sekunden. Das übrige Abfrageintervall bleibt davon unberührt. MQTT-Rechte findest du im Security Center. Den Plugin-Loglevel stellst du in der LoxBerry-Pluginverwaltung ein.</p></div></section>'%(h,c.get('poll_interval',30),c.get('adb_timeout',8),c.get('screen_poll_interval',5),screen_options(c),html.escape(c.get('mqtt',{}).get('base_topic','firetv'),quote=True),'checked' if c.get('mqtt',{}).get('enabled',True) else '','checked' if c.get('mqtt',{}).get('listen_enabled',True) else '','checked' if c.get('watchdog',{}).get('enabled',True) else ''))
 print('<section class="card"><h2>Fire TV hinzufügen</h2><div class="body"><form method="post">%s<input type="hidden" name="form_action" value="add_device"><div class="grid"><div class="field"><label>Name</label><input name="name" maxlength="80" placeholder="Wohnzimmer" required></div><div class="field"><label>IP / Hostname</label><input name="ip" maxlength="253" placeholder="192.168.1.50" required></div><div class="field"><label>ADB-Port</label><input name="port" type="number" min="1" max="65535" value="5555"></div></div><p><button class="btn green">Hinzufügen</button> <a class="btn" href="discover.cgi">Automatisch suchen</a></p></form></div></section>'%h)
 print('<section class="card"><h2>Geräte</h2><div class="body">')
 if not c.get('devices'):print('<p class="muted">Noch keine Geräte angelegt.</p>')
 for d in c.get('devices',[]):
- ident=html.escape(str(d.get('id','')),quote=True);onm=str(d.get('cec_on_method','home'));offm=str(d.get('cec_off_method','sleep'));delay=d.get('cec_on_delay',0.8)
- opts=[('home','Home 1×'),('home_repeat','Home 2×'),('wakeup_home','Wakeup + Home'),('power_home','Power + Home'),('auto','Automatik (Wakeup + Home 2×)')];onopts=''.join('<option value="%s" %s>%s</option>'%(v,'selected' if onm==v else '',t) for v,t in opts);offopts=''.join('<option value="%s" %s>%s</option>'%(v,'selected' if offm==v else '',t) for v,t in [('sleep','Sleep / Standby'),('power','Power-Taste')])
- print('<div class="device"><div><b>%s</b><br><span class="muted">%s:%s · ID: %s</span><form method="post"><div class="device-actions">%s<input type="hidden" name="form_action" value="save_device_cec"><input type="hidden" name="id" value="%s"><div class="mini"><label>TV EIN</label><select name="cec_on_method">%s</select></div><div class="mini"><label>Verzögerung</label><input name="cec_on_delay" type="number" min="0.1" max="5" step="0.1" value="%s"></div><div class="mini"><label>TV AUS</label><select name="cec_off_method">%s</select></div><button class="btn green">Speichern</button></div></form><div class="muted">Die Verzögerung wird zwischen Wakeup/Power und Home bzw. zwischen zwei Home-Befehlen verwendet.</div></div><div class="side-actions"><form method="post">%s<input type="hidden" name="form_action" value="adb_reconnect"><input type="hidden" name="id" value="%s"><button class="btn orange">↻ ADB neu verbinden</button></form><form method="post">%s<input type="hidden" name="form_action" value="delete"><input type="hidden" name="id" value="%s"><button class="btn red">Löschen</button></form></div></div>'%(html.escape(str(d.get('name','Fire TV'))),html.escape(str(d.get('ip',''))),html.escape(str(d.get('port',5555))),ident,h,ident,onopts,html.escape(str(delay),quote=True),offopts,h,ident,h,ident))
+ ident=html.escape(str(d.get('id','')),quote=True);onm=str(d.get('cec_on_method','home'));offm=str(d.get('cec_off_method','sleep_repeat'));delay=d.get('cec_on_delay',0.8)
+ opts=[('home','Home 1×'),('home_repeat','Home 2×'),('wakeup_home','Wakeup + Home'),('power_home','Power + Home'),('auto','Automatik (Wakeup + Home 2×)')];onopts=''.join('<option value="%s" %s>%s</option>'%(v,'selected' if onm==v else '',t) for v,t in opts);offopts=''.join('<option value="%s" %s>%s</option>'%(v,'selected' if offm==v else '',t) for v,t in [('sleep','Sleep 1×'),('sleep_repeat','Sleep 2×'),('power','Power 1×'),('power_repeat','Power 2×'),('auto','Automatik (Sleep 2× + Power)')])
+ print('<div class="device"><div><b>%s</b><br><span class="muted">%s:%s · ID: %s</span><form method="post"><div class="device-actions">%s<input type="hidden" name="form_action" value="save_device_cec"><input type="hidden" name="id" value="%s"><div class="mini"><label>TV EIN</label><select name="cec_on_method">%s</select></div><div class="mini"><label>Verzögerung</label><input name="cec_on_delay" type="number" min="0.1" max="5" step="0.1" value="%s"></div><div class="mini"><label>TV AUS</label><select name="cec_off_method">%s</select></div><button class="btn green">Speichern</button></div></form><div class="muted">Die Verzögerung gilt zwischen zwei aufeinanderfolgenden Befehlen – beim Einschalten zwischen Wakeup/Power und Home, beim Ausschalten zwischen den Sleep-Befehlen.</div></div><div class="side-actions"><form method="post">%s<input type="hidden" name="form_action" value="adb_reconnect"><input type="hidden" name="id" value="%s"><button class="btn orange">↻ ADB neu verbinden</button></form><form method="post">%s<input type="hidden" name="form_action" value="delete"><input type="hidden" name="id" value="%s"><button class="btn red">Löschen</button></form></div></div>'%(html.escape(str(d.get('name','Fire TV'))),html.escape(str(d.get('ip',''))),html.escape(str(d.get('port',5555))),ident,h,ident,onopts,html.escape(str(delay),quote=True),offopts,h,ident,h,ident))
 print('</div></section><div class="footer">Fire TV Control · Marco Düthorn · 2026 · v%s</div></main></div></div></body></html>'%V)

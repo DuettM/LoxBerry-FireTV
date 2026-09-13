@@ -1,54 +1,40 @@
 #!/usr/bin/env python3
 import hashlib,hmac,json,os,re,subprocess,sys
 from urllib.parse import parse_qs
+import importlib.util as _il, os as _os, sys as _sys
+def _load_webui():
+    p = _os.path.abspath(_os.environ.get('SCRIPT_FILENAME') or __file__)
+    m = _os.sep + 'webfrontend' + _os.sep
+    base = p.split(m, 1)[0] if m in p else (_os.environ.get('LBHOMEDIR') or _os.environ.get('LBHOME') or '')
+    parts = p.split(_os.sep)
+    fld = parts[parts.index('plugins') + 1] if 'plugins' in parts else 'firetv'
+    mp = _os.path.join(base, 'bin', 'plugins', fld, 'webui.py')
+    s = _il.spec_from_file_location('firetv_webui', mp)
+    mod = _il.module_from_spec(s); s.loader.exec_module(mod); return mod
+webui = _load_webui()
+csrf=webui.csrf
+folder=webui.folder
+request_data=webui.post_data
+root=webui.root
+same_site=webui.same_site
 
-def root():
- p=os.path.abspath(os.environ.get('SCRIPT_FILENAME') or __file__)
- marker=os.sep+'webfrontend'+os.sep
- if marker in p:return p.split(marker,1)[0]
- r=os.environ.get('LBHOMEDIR') or os.environ.get('LBHOME')
- if r:return r
- raise RuntimeError('LoxBerry Basisverzeichnis konnte nicht ermittelt werden')
-def folder():
- p=os.path.abspath(os.environ.get('SCRIPT_FILENAME') or __file__);parts=p.split(os.sep)
- return parts[parts.index('plugins')+1] if 'plugins' in parts and parts.index('plugins')+1 < len(parts) else 'firetv'
-def request_data():
- data={k:v[-1] if v else '' for k,v in parse_qs(os.environ.get('QUERY_STRING',''),keep_blank_values=True).items()}
- if os.environ.get('REQUEST_METHOD','GET').upper()=='POST':
-  try:length=min(max(int(os.environ.get('CONTENT_LENGTH','0') or 0),0),65536)
-  except ValueError:length=0
-  ctype=(os.environ.get('CONTENT_TYPE','') or '').split(';',1)[0].strip().lower()
-  raw=sys.stdin.buffer.read(length) if length else b''
-  if ctype=='application/x-www-form-urlencoded':
-   body=parse_qs(raw.decode('utf-8','replace'),keep_blank_values=True)
-   for k,v in body.items():data[k]=v[-1] if v else ''
-  elif ctype=='application/json' and raw:
-   try:
-    obj=json.loads(raw.decode('utf-8','replace'))
-    if isinstance(obj,dict):data.update({str(k):'' if v is None else str(v) for k,v in obj.items()})
-   except Exception:pass
- return data
 FOLDER=folder();CFG=os.path.join(root(),'config','plugins',FOLDER,'config.json');BIN=os.path.join(root(),'bin','plugins',FOLDER)
 
 def out(o,code=200):
  print('Status: %d\r\nContent-Type: application/json; charset=utf-8\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nContent-Security-Policy: default-src \'none\'; frame-ancestors \'none\'; base-uri \'none\'\r\n\r\n'%code,end='');print(json.dumps(o,ensure_ascii=False));raise SystemExit
 
-def csrf(c):
- seed=(os.environ.get('HTTP_COOKIE','')+'|'+os.environ.get('HTTP_USER_AGENT','')).encode();key=str(c.get('web_secret','')).encode();return hmac.new(key,seed,hashlib.sha256).hexdigest()
 def require_csrf(c):
  sent=os.environ.get('HTTP_X_FIRETV_CSRF','')
  if not sent or not hmac.compare_digest(sent,csrf(c)):out({'ok':False,'error':'CSRF-Prüfung fehlgeschlagen.'},403)
-def same_site():
- if os.environ.get('HTTP_SEC_FETCH_SITE','').lower()=='cross-site':out({'ok':False,'error':'Cross-Site-Anfrage blockiert.'},403)
- host=os.environ.get('HTTP_HOST','').lower()
- for k in ('HTTP_ORIGIN','HTTP_REFERER'):
-  v=os.environ.get(k,'').lower()
-  if v and host:
-   m=re.match(r'^https?://([^/]+)',v)
-   if m and m.group(1)!=host:out({'ok':False,'error':'Cross-Site-Anfrage blockiert.'},403)
 try:c=json.load(open(CFG,encoding='utf-8'))
 except Exception as e:out({'ok':False,'error':'Konfiguration konnte nicht gelesen werden: '+str(e)},500)
-f=request_data();dev=(f.get('device') or '').strip();action=(f.get('action') or 'status').strip().lower();value=f.get('value')
+def params():
+ """POST-Daten für Befehle, bei GET die Query-Parameter. Schaltbefehle bleiben
+ auf POST beschränkt, GET dient nur der Statusabfrage."""
+ if os.environ.get('REQUEST_METHOD','GET').upper()=='POST':return request_data()
+ from urllib.parse import parse_qs
+ return {k:(v[-1] if v else '') for k,v in parse_qs(os.environ.get('QUERY_STRING',''),keep_blank_values=True).items()}
+f=params();dev=(f.get('device') or '').strip();action=(f.get('action') or 'status').strip().lower();value=f.get('value')
 read_actions={'status','apps'}
 write_actions={'home','back','up','down','left','right','ok','enter','menu','playpause','stop','next','previous','rewind','fastforward','mute','volumeup','volumedown','wakeup','standby','on','wake','off','tvon','tvoff','tv_on','tv_off','reboot','app','launch','text'}
 if action not in read_actions|write_actions:out({'ok':False,'error':'Ungültiger Befehl.'},400)

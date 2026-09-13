@@ -232,15 +232,22 @@ class FireTV:
         if method not in methods:method="home"
         steps=self._cec_sequence("TV EIN/"+method,methods[method]);return {"ok":True,"action":"tvon","method":method,"delay":delay,"steps":steps}
     def tv_off(self):
-        method=str(self.device.get("cec_off_method","sleep") or "sleep").lower()
-        if method not in ("sleep","power"):method="sleep"
-        return {"ok":True,"action":"tvoff","method":method,"steps":self._cec_sequence("TV AUS/"+method,[(method,0)])}
+        method=str(self.device.get("cec_off_method","sleep_repeat") or "sleep_repeat").lower()
+        try:delay=float(self.device.get("cec_off_delay",self.device.get("cec_on_delay",0.8)))
+        except Exception:delay=.8
+        delay=min(max(delay,.1),5.0)
+        methods={"sleep":[("sleep",0)],"sleep_repeat":[("sleep",0),("sleep",delay)],
+                 "power":[("power",0)],"power_repeat":[("power",0),("power",delay)],
+                 "auto":[("sleep",0),("sleep",delay),("power",delay)]}
+        if method not in methods:method="sleep_repeat"
+        steps=self._cec_sequence("TV AUS/"+method,methods[method])
+        return {"ok":True,"action":"tvoff","method":method,"delay":delay,"steps":steps}
     def cec_diagnostics(self):
         checks={}
         for name,cmd in {"hdmi_control_enabled":("settings","get","global","hdmi_control_enabled"),"cec_control_enabled":("settings","get","global","cec_control_enabled"),"hdmi_cec_enabled":("settings","get","global","hdmi_cec_enabled"),"amazon_equipment_control":("settings","get","secure","equipment_control_enabled"),"model":("getprop","ro.product.model"),"device":("getprop","ro.product.device"),"fireos_build":("getprop","ro.build.version.incremental")}.items():
             try:checks[name]=self.shell(*cmd).strip()
             except Exception as e:checks[name]="error: "+str(e)
-        return {"ok":True,"action":"cecdiag","on_method":self.device.get("cec_on_method","home"),"on_delay":self.device.get("cec_on_delay",.8),"off_method":self.device.get("cec_off_method","sleep"),"checks":checks}
+        return {"ok":True,"action":"cecdiag","on_method":self.device.get("cec_on_method","home"),"on_delay":self.device.get("cec_on_delay",.8),"off_method":self.device.get("cec_off_method","sleep_repeat"),"off_delay":self.device.get("cec_off_delay",self.device.get("cec_on_delay",.8)),"checks":checks}
     def launch(self,package):
         package=APP_PRESETS.get(str(package).lower(),package);package=str(package).strip()
         if not re.fullmatch(r"[A-Za-z0-9._-]{1,200}",package):raise ValueError("Ungültiger Paketname")

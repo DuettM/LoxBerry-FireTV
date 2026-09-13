@@ -2,7 +2,7 @@
 
 LoxBerry-Plugin zur Abfrage und Steuerung eines oder mehrerer Amazon Fire TV / Fire TV Stick Geräte per Netzwerk-ADB.
 
-Aktueller Entwicklungsstand: **v0.3.12**.
+Aktueller Entwicklungsstand: **v0.3.14**.
 
 > Unabhängiges Community-Projekt. Nicht mit Amazon, Fire TV, LoxBerry oder Loxone verbunden oder von diesen unterstützt.
 
@@ -12,33 +12,49 @@ Aktueller Entwicklungsstand: **v0.3.12**.
 - automatische Fire-TV-Suche im lokalen Netzwerk
 - ADB-Autorisierungsstatus und gezieltes erneutes Verbinden
 - Online-, Bildschirm-/Awake- und App-Status
+- wählbares Verfahren zur Bildschirmerkennung mit Diagnose in der Oberfläche
+- schnelle Bildschirmüberwachung: Änderungen werden im Sekundentakt über MQTT gemeldet
 - Fernbedienung: Navigation, OK, Home, Zurück, Menü und Mediensteuerung
 - Lautstärke und Mute
 - konfigurierbares TV-Einschalten über HDMI-CEC-orientierte ADB-Keyevents
 - TV-EIN-Methoden: Home 1×, Home 2×, Wakeup + Home, Power + Home oder Automatik
 - einstellbare Verzögerung zwischen CEC-Keyevents
-- TV-AUS über Sleep/Standby oder Power-Keyevent
+- TV-AUS-Methoden: Sleep 1×, Sleep 2×, Power 1×, Power 2× oder Automatik
 - Apps per Preset oder Android-Package-ID starten
 - MQTT über den zentralen LoxBerry MQTT Broker
 - MQTT-Befehls-Whitelist und Security Center
 - optionaler MQTT-Befehlstoken für zusätzliche Absicherung
 - Status-Polling, LoxBerry-Daemon und Watchdog
 - JSON-API und Debug-/Log-Seite
+- Seite „Loxone" mit fertiger MQTT-Vorlage für virtuelle Ausgänge zum Download
 - nativer LoxBerry-Webrahmen mit `LoxBerry::Web::lbheader()` / `lbfooter()`
 - updatefeste Benutzerkonfiguration mit Backup/Restore und Default-Merge
 - API-Key für Schaltbefehle aus Loxone/Skripten
 
-## Neu in v0.3.12
+## Neu in v0.3.14
 
+**Sicherheit**
 - Texteingabe wird vor der Übergabe an `adb shell` gequotet
 - MQTT-Listener läuft auch nach einem Watchdog-Neustart als Benutzer `loxberry`
+- Ed25519-Signaturprüfung entfernt, da sie nie im Updatepfad eingebunden war
+
+**Loxone**
+- Seite „Loxone" erzeugt eine fertige MQTT-Vorlage für virtuelle Ausgänge
 - API-Key für Schaltbefehle aus Loxone oder Skripten
-- Seite „Loxone" mit fertiger MQTT-Vorlage für virtuelle Ausgänge zum Download
-- Statusabfrage und MQTT-Veröffentlichung deutlich schlanker
-- Bildschirmzustand wird sekundengenau über MQTT gemeldet
-- Security Center mit Navigation auf Mobilgeräten und farbig markierter Auswahl
+- `availability` geht per Last Will auf `offline`, wenn der Listener ausfällt
+
+**Bildschirm**
+- Erkennungsverfahren wählbar, mit Vergleichsdiagnose auf der Debug-Seite
+- Änderungen werden im Sekundentakt gemeldet statt erst beim nächsten Poll
+
+**Oberfläche**
+- Navigation auf Mobilgeräten auf allen Seiten, aktueller Reiter farbig markiert
 - Versionsanzeige zeigt die tatsächlich installierte Version
-- Ed25519-Signaturprüfung entfernt, da sie nicht im Updatepfad eingebunden war
+- Dashboard fragt alle Geräte parallel ab
+
+**Wartung**
+- gemeinsames Modul `bin/webui.py` statt sechsfach kopiertem Code
+- Tests unter `tests/`, ausgeführt bei jedem Push und vor jedem Release
 
 ## Voraussetzungen
 
@@ -157,3 +173,19 @@ Der originale Projektcode steht unter der **MIT License**. Drittsoftware und Sys
 
 **Marco Düthorn**  
 Kontakt: `duett86@web.de`
+
+## Tests
+
+```
+python3 -m unittest discover -s tests -v
+```
+
+Die Tests kommen ohne Fire TV, ohne adb und ohne MQTT-Broker aus. Sie prüfen die
+Kernlogik (Bildschirmerkennung, Adressprüfung, Quoting der Texteingabe,
+CEC-Sequenzen) und führen jede Seite der Oberfläche in einer nachgebauten
+LoxBerry-Installation aus. Dabei wird unter anderem verglichen, ob alle Seiten
+dieselbe Navigation und dieselbe Versionsanzeige liefern und ob jeder Wert, der
+in einem Auswahlfeld steht, sich auch speichern lässt.
+
+Die Workflows `tests.yml` (bei jedem Push) und `release.yml` (beim Tag) führen
+sie automatisch aus.
