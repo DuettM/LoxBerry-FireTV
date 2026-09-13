@@ -21,6 +21,9 @@
 
 ## [0.3.13]
 
+### Geändert
+- TV AUS erweitert: wählbar zwischen Sleep/Standby 1×, Sleep/Standby 2× und Power-Taste; Sleep 2× nutzt die einstellbare Wiederhol-Verzögerung
+
 ### Sicherheit
 - Texteingabe (`text`) wird vor der Übergabe an `adb shell` gequotet. Vorher konnten Zeichen wie `;`, `|` oder `$(...)` als Shell-Befehl auf dem Fire TV ausgeführt werden.
 - `key()` akzeptiert nur noch bekannte Keycodes statt beliebiger Strings.
